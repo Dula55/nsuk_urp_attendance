@@ -1,12 +1,18 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
+from datetime import datetime
+from sqlalchemy import Column, Integer, String, DateTime, create_engine
+from sqlalchemy.ext.declarative import declarative_base
 from flask import Response, send_file
 from werkzeug.security import generate_password_hash, check_password_hash
 import io
 import csv
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
+
+
+Base = declarative_base()
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'
@@ -36,6 +42,7 @@ class Student(db.Model):
     name = db.Column(db.String(100), nullable=False)
     matric_no = db.Column(db.String(50), unique=True, nullable=False)
     course = db.Column(db.String(100), nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     active = db.Column(db.Boolean, default=True)  # This is the field we're toggling
     
     def __repr__(self):
@@ -44,10 +51,16 @@ class Student(db.Model):
     
 # Attendance Model
 class Attendance(db.Model):
+    __tablename__ = 'attendance'  # Explicit table name
+    
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
-    matric_no = db.Column(db.String(100), nullable=False)
+    matric_no = db.Column(db.String(50), nullable=False)
     course = db.Column(db.String(100), nullable=False)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<Attendance {self.matric_no}>"
 
 # Home Route
 @app.route('/')
@@ -131,15 +144,30 @@ def attendance():
     
     return render_template('attendance.html')
 
+
+@app.route('/submit_attendance', methods=['POST'])
+def submit_attendance():
+    try:
+        new_attendance = Attendance(
+            name=request.form['name'],
+            matric_no=request.form['matric_no'],
+            course=request.form['course']
+            # timestamp will be automatically set
+        )
+        db.session.add(new_attendance)
+        db.session.commit()
+        flash('Attendance recorded successfully!', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error: {str(e)}', 'danger')
+    return redirect(url_for('attendance'))
+
+
 # Records Route (Protected)
 @app.route('/records')
 def records():
-    if 'user_id' not in session or session['role'] != 'lecturer':
-        flash('Please login as lecturer to access this page', 'danger')
-        return redirect(url_for('login'))
-    
-    all_records = Attendance.query.all()
-    return render_template('records.html', records=all_records)
+    records = Attendance.query.order_by(Attendance.timestamp.desc()).all()
+    return render_template('records.html', records=records)
 
 
 # Download PDF route
@@ -214,5 +242,8 @@ def toggle_status(student_id):
 
 
 
-if __name__ == '__main__':
-    app.run(debug=True)
+if __name__ == "__main__":
+    with app.app_context():
+        db.create_all()
+    app.run()
+
