@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block content %}
+    <h3>Attendance Records</h3>
+    <a href="{{ url_for('index') }}" class="btn btn-primary">Back to Home</a>
+    {% if records %}
+        <table class="table table-bordered">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Matric Number</th>
+                    <th>Course</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for rec in records %}
+                <tr>
+                    <td>{{ rec.name }}</td>
+                    <td>{{ rec.matric_no }}</td>
+                    <td>{{ rec.course }}</td>
+                    <td>{% if rec.active %}Active{% else %}Inactive{% endif %}</td>
+                    <td>
+                        <div class="btn-group" role="group">
+                            <form method="POST" action="{{ url_for('toggle_status', student_id=rec.id) }}" style="display: inline;">
+                                <input type="hidden" name="action" value="{% if rec.active %}deactivate{% else %}activate{% endif %}">
+                                <button type="submit" class="btn btn-sm {% if rec.active %}btn-warning{% else %}btn-success{% endif %}" 
+                                        onclick="return confirm('{% if rec.active %}Deactivate{% else %}Activate{% endif %} this student account?');">
+                                    {% if rec.active %}Deactivate{% else %}Activate{% endif %}
+                                </button>
+                            </form>
+                            <form method="POST" action="{{ url_for('delete_record', record_id=rec.id) }}" style="display: inline;">
+                                <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure?');">Delete</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="download-section mt-4">
+            <h4>Download Records</h4>
+            <div class="btn-group" role="group">
+                <a href="{{ url_for('download_all_csv') }}" class="btn btn-success" download>Download All as CSV</a>
+                <a href="{{ url_for('download_all_pdf') }}" class="btn btn-info" download>Download All as PDF</a>
+            </div>
+        </div>
+    {% else %}
+        <p>No attendance records yet.</p>
+    {% endif %}
+
+    <script>
+        // Auto-download when clicking download links
+        document.addEventListener('DOMContentLoaded', function() {
+            const downloadLinks = document.querySelectorAll('a[download]');
+            downloadLinks.forEach(link => {
+                link.addEventListener('click', function(e) {
+                    // The download attribute will handle the actual download
+                    // No need for additional JavaScript for basic download behavior
+                });
+            });
+        });
+    </script>
+{% endblock %}

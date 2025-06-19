@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+    :root {
+        --nsuk-green: #006633;
+        --nsuk-light: #f8f9fa;
+        --nsuk-dark:rgb(239, 244, 237);
+    }
+    body {
+        background: var(--nsuk-light);
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+    }
+    .header-logo {
+        height: 80px;
+        margin-bottom: 1.5rem;
+        transition: height 0.3s;
+    }
+    .sidebar {
+        background: var(--nsuk-dark);
+        color: white;
+        padding: 2rem 1rem;
+        width: 250px;
+        position: fixed;
+        height: 100vh;
+        box-shadow: 2px 0 10px rgba(243, 235, 235, 0.1);
+        display: flex;
+        flex-direction: column;
+        z-index: 10;
+    }
+    .sidebar .nav-link {
+        color: rgba(15, 14, 14, 0.85);
+        padding: 0.75rem 1rem;
+        margin: 0.25rem 0;
+        border-radius: 4px;
+        transition: all 0.3s;
+        font-size: 1.08rem;
+        font-weight: 500;
+    }
+    .sidebar .nav-link:hover,
+    .sidebar .nav-link.active {
+        background: rgba(16, 16, 16, 0.8);
+        color: #fff;
+        text-decoration: none;
+    }
+    .main-content {
+        margin-left: 250px;
+        padding: 3rem 1rem;
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 80vh;
+        transition: margin-left 0.3s;
+    }
+    .welcome-card {
+        border: none;
+        border-radius: 12px;
+        box-shadow: 0 5px 24px rgba(239, 245, 161, 0.1);
+        overflow: hidden;
+        width: 100%;
+        max-width: 500px;
+        margin: 0 auto;
+        background: #fff;
+    }
+    .welcome-header {
+        background: var(--nsuk-green);
+        color: white;
+        padding: 2rem 1rem 1.2rem 1rem;
+        text-align: center;
+        font-size: 1.35rem;
+        font-weight: 600;
+        border-top-left-radius: 12px;
+        border-top-right-radius: 12px;
+    }
+    .welcome-body {
+        padding: 2rem 1.5rem 2.5rem 1.5rem;
+        text-align: center;
+    }
+    .footer {
+        background: var(--nsuk-dark);
+        color: black;
+        text-align: center;
+        padding: 1.2rem 0 1.2rem 0;
+        margin-top: auto;
+        width: 100%;
+        font-size: 1rem;
+        letter-spacing: 0.2px;
+    }
+    .btn-nsuk {
+        background: var(--nsuk-green);
+        color: white;
+        padding: 0.5rem 1.5rem;
+        border-radius: 4px;
+        border: none;
+    }
+    .btn-nsuk:hover, .btn-nsuk:focus {
+        background: #00562a;
+        color: white;
+    }
+    @media (max-width: 991.98px) {
+        .sidebar {
+            width: 100%;
+            height: auto;
+            position: static;
+            flex-direction: row;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem 0.5rem;
+            box-shadow: none;
+        }
+        .main-content {
+            margin-left: 0;
+            padding: 2rem 0.5rem;
+            min-height: 70vh;
+        }
+        .footer {
+            margin-left: 0;
+        }
+        .header-logo {
+            height: 60px;
+        }
+    }
+    @media (max-width: 575.98px) {
+        .welcome-card {
+            max-width: 99vw;
+        }
+        .welcome-header, .welcome-body {
+            padding-left: 0.5rem;
+            padding-right: 0.5rem;
+        }
+        .header-logo {
+            height: 45px;
+        }
+    }
+</style>
+
+<div class="sidebar">
+    <div class="text-center mb-4 w-100">
+        <img src="{{ url_for('static', filename='images/NSUK-logo.jpg') }}" alt="NSUK Logo" class="header-logo d-block mx-auto">
+    </div>
+    {% if 'user_id' in session %}
+        <div class="mb-3 px-2 w-100">
+            <small>Logged in as</small>
+            <div class="font-weight-bold">{{ session['role']|capitalize }}</div>
+        </div>
+        <a href="{{ url_for('index') }}" class="nav-link {% if request.endpoint == 'index' %}active{% endif %}">
+            <i class="fas fa-home mr-2"></i>Dashboard
+        </a>
+        {% if session['role'] == 'lecturer' %}
+            <a href="{{ url_for('records') }}" class="nav-link {% if request.endpoint == 'records' %}active{% endif %}">
+                <i class="fas fa-list mr-2"></i>View Records
+            </a>
+        {% else %}
+            <a href="{{ url_for('attendance') }}" class="nav-link {% if request.endpoint == 'attendance' %}active{% endif %}">
+                <i class="fas fa-check-circle mr-2"></i>Mark Attendance
+            </a>
+        {% endif %}
+        <a href="{{ url_for('logout') }}" class="nav-link mt-auto">
+            <i class="fas fa-sign-out-alt mr-2"></i>Logout
+        </a>
+    {% else %}
+        
+    {% endif %}
+</div>
+
+<div class="main-content">
+    <div class="welcome-card">
+        <div class="welcome-header">
+            Welcome to the URP E-Attendance Portal
+        </div>
+        <div class="welcome-body">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }} alert-dismissible fade show">
+                            {{ message }}
+                            <button type="button" class="close" data-dismiss="alert">
+                                <span>&times;</span>
+                            </button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+            <p class="mb-4 text-muted">
+                Efficiently track and manage lecture attendance for students and lecturers in the Department of Urban and Regional Planning, Nasarawa State University, Keffi.
+            </p>
+            {% if 'user_id' in session %}
+                <div class="text-center mt-4">
+                    <p class="mb-4">You are logged in as <strong>{{ session['role']|capitalize }}</strong></p>
+                    {% if session['role'] == 'lecturer' %}
+                        <a href="{{ url_for('records') }}" class="btn btn-nsuk btn-lg mr-3 mb-2">
+                            <i class="fas fa-list mr-2"></i>View Records
+                        </a>
+                    {% else %}
+                        <a href="{{ url_for('attendance') }}" class="btn btn-nsuk btn-lg mr-3 mb-2">
+                            <i class="fas fa-check-circle mr-2"></i>Mark Attendance
+                        </a>
+                    {% endif %}
+                    <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary btn-lg mb-2">
+                        <i class="fas fa-sign-out-alt mr-2"></i>Logout
+                    </a>
+                </div>
+            {% else %}
+                <div class="text-center mt-4">
+                    <h5 class="mb-4">Please login to continue</h5>
+                    <a href="{{ url_for('login') }}" class="btn btn-nsuk btn-lg mr-3 mb-2">
+                        <i class="fas fa-sign-in-alt mr-2"></i>Login
+                    </a>
+                    <a href="{{ url_for('register') }}" class="btn btn-outline-secondary btn-lg mb-2">
+                        <i class="fas fa-user-plus mr-2"></i>Register
+                    </a>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<footer class="footer">
+    <div class="container">
+        <p class="mb-0">
+            &copy; 2025 Department of Urban and Regional Planning, NSUK<br>
+            Developed by Abdullahi Suleiman | Nasarawa State University, Keffi
+        </p>
+    </div>
+</footer>
+
+<!-- Font Awesome for icons -->
+<script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
+<!-- Bootstrap JS -->
+<script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.2/dist/js/bootstrap.bundle.min.js"></script>
+{% endblock %}

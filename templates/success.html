@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block content %}
+    <div class="alert alert-success">
+        Attendance marked successfully for <strong>{{ record.name }}</strong> ({{ record.matric_no }}) in <strong>{{ record.course }}</strong>.
+    </div>
+    <a href="{{ url_for('index') }}" class="btn btn-primary">Back to Home</a>
+{% endblock %}
