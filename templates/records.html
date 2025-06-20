@@ -1,10 +1,14 @@
 {% extends "base.html" %}
 {% block content %}
+
+<!-- CSRF token meta tag for AJAX requests -->
+<meta name="csrf-token" content="{{ csrf_token() }}">
+
 <div class="container-fluid py-4">
     <div class="card shadow-sm">
         <div class="card-header bg-primary text-white">
             <div class="d-flex justify-content-between align-items-center">
-                <h3 class="mb-0"><i class="fas fa-clipboard-list mr-2"></i>Student Records</h3>
+                <h3 class="mb-0"><i class="fas fa-clipboard-list mr-2"></i>Student Attendance Records</h3>
                 <div>
                     <a href="{{ url_for('index') }}" class="btn btn-light btn-sm">
                         <i class="fas fa-home mr-1"></i> Back to Home
@@ -14,6 +18,20 @@
         </div>
         
         <div class="card-body">
+            <!-- Flash Messages -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }} alert-dismissible fade show">
+                            {{ message }}
+                            <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                                <span aria-hidden="true">&times;</span>
+                            </button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
             <div class="d-flex justify-content-between mb-4">
                 <div class="export-buttons">
                     <a href="{{ url_for('download_all_csv') }}" class="btn btn-outline-success">
@@ -26,7 +44,7 @@
                 <div class="record-count">
                     <span class="badge badge-info p-2">
                         <i class="fas fa-database mr-1"></i> 
-                        Active: {{ active_count }} | Inactive: {{ inactive_count }}
+                        Total: {{ records|length }} | Active: {{ active_count }} | Inactive: {{ inactive_count }}
                     </span>
                 </div>
             </div>
@@ -36,6 +54,7 @@
                 <table class="table table-hover table-striped">
                     <thead class="thead-light">
                         <tr>
+                            <th>#</th>
                             <th><i class="fas fa-user mr-1"></i> Name</th>
                             <th><i class="fas fa-id-card mr-1"></i> Matric Number</th>
                             <th><i class="fas fa-book mr-1"></i> Course</th>
@@ -47,44 +66,34 @@
                     <tbody>
                         {% for record in records %}
                         <tr>
+                            <td>{{ loop.index }}</td>
                             <td>{{ record.name }}</td>
                             <td>{{ record.matric_no }}</td>
                             <td>{{ record.course }}</td>
                             <td>
-                                {% if record.timestamp %}
                                 <span class="text-dark">
                                     {{ record.timestamp.strftime('%Y-%m-%d %H:%M') }}
                                 </span>
-                                {% else %}
-                                <span class="text-dark">Not recorded</span>
-                                {% endif %}
                             </td>
                             <td>
-                                {% if record.active %}
-                                    <span class="badge badge-success text-dark">Active</span>
-                                {% else %}
-                                    <span class="badge badge-danger text-dark">Inactive</span>
-                                {% endif %}
+                                <span class="badge {% if record.active %}badge-success{% else %}badge-danger{% endif %} status-badge" data-status="{{ 'active' if record.active else 'inactive' }}">
+                                    {% if record.active %}Active{% else %}Inactive{% endif %}
+                                </span>
                             </td>
                             <td class="d-flex">
-                                <form method="POST" action="{{ url_for('toggle_status', student_id=record.id) }}" class="mr-2">
-                                    {% if record.active %}
-                                        <input type="hidden" name="action" value="deactivate">
-                                        <button type="submit" class="btn btn-sm btn-warning">
-                                            <i class="fas fa-user-slash"></i> Deactivate
-                                        </button>
-                                    {% else %}
-                                        <input type="hidden" name="action" value="activate">
-                                        <button type="submit" class="btn btn-sm btn-success">
-                                            <i class="fas fa-user-check"></i> Activate
-                                        </button>
-                                    {% endif %}
-                                </form>
-                                <form method="POST" action="{{ url_for('delete_record', record_id=record.id) }}">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Are you sure you want to delete this record?');">
-                                        <i class="fas fa-trash-alt"></i> Delete
-                                    </button>
-                                </form>
+                                <!-- Toggle Status Button -->
+                                <button class="btn btn-sm {% if record.active %}btn-warning{% else %}btn-success{% endif %} toggle-status mr-2"
+                                        data-student-id="{{ record.id }}"
+                                        data-current-status="{{ 'active' if record.active else 'inactive' }}">
+                                    <i class="fas {% if record.active %}fa-user-slash{% else %}fa-user-check{% endif %}"></i>
+                                    {% if record.active %}Deactivate{% else %}Activate{% endif %}
+                                </button>
+
+                                <!-- Delete Button -->
+                                <button class="btn btn-sm btn-outline-danger delete-record"
+                                        data-record-id="{{ record.id }}">
+                                    <i class="fas fa-trash-alt"></i> Delete
+                                </button>
                             </td>
                         </tr>
                         {% endfor %}
@@ -95,8 +104,8 @@
             <div class="text-center py-5">
                 <div class="empty-state">
                     <i class="fas fa-clipboard fa-4x text-muted mb-3"></i>
-                    <h4 class="text-muted">No student records found</h4>
-                    <p class="text-muted">When students submit attendance, records will appear here</p>
+                    <h4 class="text-muted">No attendance records found</h4>
+                    <p class="text-muted">Submit attendance through the attendance form to see records here</p>
                 </div>
             </div>
             {% endif %}
@@ -104,15 +113,200 @@
     </div>
 </div>
 
-<style>
-    .badge-success.text-dark, 
-    .badge-danger.text-dark,
-    .badge-warning.text-dark,
-    .badge-secondary.text-dark {
-        color: #212529 !important; /* Bootstrap's dark color */
+<!-- Toast Container -->
+<div id="toastContainer" class="position-fixed bottom-0 end-0 p-3" style="z-index: 11"></div>
+
+<script>
+// Function to handle status toggle
+async function handleStatusToggle(button) {
+    const studentId = button.dataset.studentId;
+    const currentStatus = button.dataset.currentStatus;
+    const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
+    
+    const originalText = button.innerHTML;
+    
+    // Show loading state
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+    
+    try {
+        const response = await fetch(`/toggle_status/${studentId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content,
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify({
+                new_status: newStatus
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Update UI
+            const row = button.closest('tr');
+            const statusBadge = row.querySelector('.status-badge');
+            
+            // Update status badge
+            if (data.new_status) {
+                statusBadge.className = 'badge badge-success';
+                statusBadge.textContent = 'Active';
+                statusBadge.dataset.status = 'active';
+                // Update button to show deactivate option
+                button.className = 'btn btn-sm btn-warning toggle-status mr-2';
+                button.innerHTML = '<i class="fas fa-user-slash"></i> Deactivate';
+                button.dataset.currentStatus = 'active';
+            } else {
+                statusBadge.className = 'badge badge-danger';
+                statusBadge.textContent = 'Inactive';
+                statusBadge.dataset.status = 'inactive';
+                // Update button to show activate option
+                button.className = 'btn btn-sm btn-success toggle-status mr-2';
+                button.innerHTML = '<i class="fas fa-user-check"></i> Activate';
+                button.dataset.currentStatus = 'inactive';
+            }
+            
+            // Update counts display
+            document.querySelector('.record-count span').innerHTML = `
+                <i class="fas fa-database mr-1"></i> 
+                Total: ${data.new_counts.total} | 
+                Active: ${data.new_counts.active} | 
+                Inactive: ${data.new_counts.inactive}
+            `;
+            
+            showToast(data.message, 'success');
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showToast('Network error - please try again', 'error');
+    } finally {
+        // Reset button state
+        button.disabled = false;
+        button.innerHTML = originalText;
     }
-    .text-dark {
+}
+
+// Function to handle record deletion
+async function handleDeleteRecord(button) {
+    if (!confirm('Are you sure you want to delete this record?')) {
+        return;
+    }
+    
+    const recordId = button.dataset.recordId;
+    const originalText = button.innerHTML;
+    
+    // Show loading state
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Deleting...';
+    
+    try {
+        const response = await fetch(`/delete_record/${recordId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content,
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Remove row with animation
+            const row = button.closest('tr');
+            row.style.transition = 'all 0.3s ease';
+            row.style.opacity = '0';
+            setTimeout(() => row.remove(), 300);
+            
+            // Update counts display
+            document.querySelector('.record-count span').innerHTML = `
+                <i class="fas fa-database mr-1"></i> 
+                Total: ${data.new_counts.total} | 
+                Active: ${data.new_counts.active} | 
+                Inactive: ${data.new_counts.inactive}
+            `;
+            
+            showToast(data.message, 'success');
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showToast('Network error - please try again', 'error');
+    } finally {
+        // Reset button state
+        button.disabled = false;
+        button.innerHTML = originalText;
+    }
+}
+
+// Event delegation for toggle status buttons
+document.addEventListener('click', function(e) {
+    if (e.target.classList.contains('toggle-status') || e.target.closest('.toggle-status')) {
+        const button = e.target.classList.contains('toggle-status') ? e.target : e.target.closest('.toggle-status');
+        handleStatusToggle(button);
+    }
+    
+    if (e.target.classList.contains('delete-record') || e.target.closest('.delete-record')) {
+        const button = e.target.classList.contains('delete-record') ? e.target : e.target.closest('.delete-record');
+        handleDeleteRecord(button);
+    }
+});
+
+// Helper function for toast notifications
+function showToast(message, type = 'info') {
+    const toastContainer = document.getElementById('toastContainer');
+    const toast = document.createElement('div');
+    toast.className = `toast show align-items-center text-white bg-${type}`;
+    toast.style.minWidth = '300px';
+    toast.style.marginBottom = '10px';
+    toast.innerHTML = `
+        <div class="d-flex">
+            <div class="toast-body">${message}</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+    `;
+    toastContainer.appendChild(toast);
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        toast.style.transition = 'opacity 0.5s ease';
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 500);
+    }, 5000);
+}
+</script>
+
+<style>
+    .badge-success {
+        background-color: #28a745;
+        color: white;
+    }
+    .badge-danger {
+        background-color: #dc3545;
+        color: white;
+    }
+    .badge-warning {
+        background-color: #ffc107;
         color: #212529;
+    }
+    .badge-info {
+        background-color: #17a2b8;
+        color: white;
+    }
+    .empty-state {
+        max-width: 500px;
+        margin: 0 auto;
+    }
+    tr {
+        transition: all 0.3s ease;
+    }
+    .btn:disabled {
+        opacity: 0.7;
     }
 </style>
 {% endblock %}

@@ -1,33 +1,53 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from datetime import datetime
+from datetime import datetime, timezone  # Updated for UTC timezone
 from sqlalchemy import Column, Integer, String, DateTime, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from flask import Response, send_file
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.exceptions import NotFound, Forbidden
+from sqlalchemy.exc import IntegrityError
 import io
 import csv
+from flask_wtf import FlaskForm
+from flask_wtf.csrf import validate_csrf
+from wtforms import StringField, PasswordField, SubmitField
+from wtforms.validators import DataRequired
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
+from flask_wtf.csrf import CSRFProtect
 
+
+import logging
+from logging.handlers import RotatingFileHandler
 
 Base = declarative_base()
 
 app = Flask(__name__)
+app.debug = True
 app.secret_key = 'your_secret_key'
+csrf = CSRFProtect(app)
+
+# Configure logging AFTER app is created
+if not app.debug:
+    handler = RotatingFileHandler('error.log', maxBytes=10000, backupCount=1)
+    handler.setLevel(logging.ERROR)
+    app.logger.addHandler(handler)
 
 # Database configuration
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///attendance.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///attendance.db'  # or your DB URI
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Initialize database and migration
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 
+
 # Create tables
 with app.app_context():
     db.create_all()
+
 
 # User Model
 class User(db.Model):
@@ -48,6 +68,17 @@ class Student(db.Model):
     def __repr__(self):
         return f'<Student {self.matric_no}>'
     
+
+class StudentRecord(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    matric_no = db.Column(db.String(20), nullable=False, unique=True)
+    course = db.Column(db.String(50), nullable=False)
+    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.now)
+    active = db.Column(db.Boolean, default=True)
+
+    def __repr__(self):
+        return f'<StudentRecord {self.matric_no}>'
     
 # Attendance Model
 class Attendance(db.Model):
@@ -61,6 +92,17 @@ class Attendance(db.Model):
 
     def __repr__(self):
         return f"<Attendance {self.matric_no}>"
+
+class AttendanceForm(FlaskForm):
+    name = StringField('Full Name', validators=[DataRequired()])
+    matric_no = StringField('Matric Number', validators=[DataRequired()])
+    course = StringField('Course', validators=[DataRequired()])
+    submit = SubmitField('Submit Attendance')
+
+class LoginForm(FlaskForm):
+    username = StringField('Username', validators=[DataRequired()])
+    password = PasswordField('Password', validators=[DataRequired()])
+    submit = SubmitField('Login')
 
 # Home Route
 @app.route('/')
@@ -94,9 +136,11 @@ def register():
 # Login Route
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
+    form = LoginForm()
+    
+    if form.validate_on_submit():
+        username = form.username.data
+        password = form.password.data
         
         user = User.query.filter_by(username=username).first()
         
@@ -111,7 +155,9 @@ def login():
         else:
             flash('Invalid username or password!', 'danger')
     
-    return render_template('login.html')
+    return render_template('login.html', form=form)
+
+
 
 # Logout Route
 @app.route('/logout')
@@ -123,72 +169,83 @@ def logout():
 # Attendance Route (Protected)
 @app.route('/attendance', methods=['GET', 'POST'])
 def attendance():
+    # Authentication check
     if 'user_id' not in session or session['role'] != 'student':
         flash('Please login as student to access this page', 'danger')
         return redirect(url_for('login'))
     
-    if request.method == 'POST':
-        name = request.form['name']
-        matric_no = request.form['matric_no']
-        course = request.form['course']
+    form = AttendanceForm()
+    
+    # Form submission handling
+    if form.validate_on_submit():
+        name = form.name.data
+        matric_no = form.matric_no.data
+        course = form.course.data
         
-        if not name or not matric_no or not course:
-            flash('All fields are required!', 'danger')
-            return redirect(url_for('attendance'))
-            
         new_record = Attendance(name=name, matric_no=matric_no, course=course)
         db.session.add(new_record)
         db.session.commit()
         
         return render_template('success.html', record=new_record)
     
-    return render_template('attendance.html')
+    # Render template with form (for both GET and failed POST)
+    return render_template('attendance.html', form=form)
+
 
 
 @app.route('/submit_attendance', methods=['POST'])
 def submit_attendance():
-    name = request.form.get('name')
-    matric_no = request.form.get('matric_no')
-    course = request.form.get('course')
-    
-    # Check if student exists and is active
-    student = Student.query.filter_by(matric_no=matric_no).first()
-    
-    if student and not student.active:
-        flash('Your account is currently deactivated. Please contact administrator.', 'danger')
-        return redirect(url_for('attendance'))
-    
-    if student:
-        # Update existing record
-        student.name = name
-        student.course = course
-        student.timestamp = datetime.utcnow()
-    else:
+    try:
+        # Get form data
+        name = request.form.get('name')
+        matric_no = request.form.get('matric_no')
+        course = request.form.get('course')
+        
+        # Validate required fields
+        if not all([name, matric_no, course]):
+            flash('All fields are required!', 'danger')
+            return redirect(url_for('attendance'))
+        
+        # Check for existing record
+        existing = StudentRecord.query.filter_by(matric_no=matric_no).first()
+        if existing:
+            flash('This matric number already exists!', 'warning')
+            return redirect(url_for('attendance'))
+        
         # Create new record
-        student = Student(
+        new_record = StudentRecord(
             name=name,
             matric_no=matric_no,
             course=course,
-            active=True  # Default to active when creating new
+            timestamp=datetime.now(),
+            active=True
         )
-        db.session.add(student)
+        
+        db.session.add(new_record)
+        db.session.commit()
+        flash('Attendance submitted successfully!', 'success')
+        
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error submitting attendance: {str(e)}', 'danger')
     
-    db.session.commit()
-    flash('Attendance submitted successfully!', 'success')
     return redirect(url_for('attendance'))
 
 
 # Records Route (Protected)
 @app.route('/records')
 def records():
-    records = Student.query.order_by(Student.timestamp.desc()).all()
-    active_count = Student.query.filter_by(active=True).count()
-    inactive_count = Student.query.filter_by(active=False).count()
+    # Get all records sorted by timestamp (newest first)
+    all_records = StudentRecord.query.order_by(StudentRecord.timestamp.desc()).all()
+    
+    # Count active and inactive records
+    active_count = StudentRecord.query.filter_by(active=True).count()
+    inactive_count = StudentRecord.query.filter_by(active=False).count()
+    
     return render_template('records.html', 
-                         records=records,
+                         records=all_records,
                          active_count=active_count,
-                         inactive_count=inactive_count,
-                         now=datetime.utcnow())
+                         inactive_count=inactive_count)
 
 
 # Download PDF route
@@ -237,30 +294,44 @@ def download_all_pdf():
     )
 
 # Delete record route
-@app.route('/delete/<int:record_id>', methods=['POST'])
+@app.route('/delete_record/<int:record_id>', methods=['POST'])
 def delete_record(record_id):
-    record = Attendance.query.get_or_404(record_id)
+    record = StudentRecord.query.get_or_404(record_id)
     db.session.delete(record)
     db.session.commit()
-    flash('Record deleted successfully!', 'success')
-    return redirect(url_for('records'))
+    return jsonify({'success': True, 'message': 'Record deleted successfully'})
+        
 
 
-
-@app.route('/toggle_status/<int:student_id>', methods=['POST'])
+@app.route('/toggle_status/<student_id>', methods=['POST'])
 def toggle_status(student_id):
-    student = Student.query.get_or_404(student_id)
-    action = request.form.get('action')
+    if request.is_json:
+        data = request.get_json()
+        new_status = data.get('new_status') == 'active'
+        
+        # Update the student status in your database
+        student = Student.query.get(student_id)
+        if student:
+            student.active = new_status
+            db.session.commit()
+            
+            # Get updated counts
+            total = Student.query.count()
+            active = Student.query.filter_by(active=True).count()
+            inactive = total - active
+            
+            return jsonify({
+                'success': True,
+                'message': 'Status updated successfully',
+                'new_status': new_status,
+                'new_counts': {
+                    'total': total,
+                    'active': active,
+                    'inactive': inactive
+                }
+            })
     
-    if action == 'activate':
-        student.active = True
-        flash(f'{student.name}\'s account has been activated successfully!', 'success')
-    elif action == 'deactivate':
-        student.active = False
-        flash(f'{student.name}\'s account has been deactivated successfully!', 'warning')
-    
-    db.session.commit()
-    return redirect(url_for('records'))
+    return jsonify({'success': False, 'message': 'Invalid request'}), 400
 
 
 
