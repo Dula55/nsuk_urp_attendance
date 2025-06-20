@@ -39,11 +39,11 @@ class User(db.Model):
 
 class Student(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    matric_no = db.Column(db.String(50), unique=True, nullable=False)
-    course = db.Column(db.String(100), nullable=False)
+    name = db.Column(db.String(100))
+    matric_no = db.Column(db.String(50), unique=True)
+    course = db.Column(db.String(100))
+    active = db.Column(db.Boolean, default=True)  # New field
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-    active = db.Column(db.Boolean, default=True)  # This is the field we're toggling
     
     def __repr__(self):
         return f'<Student {self.matric_no}>'
@@ -147,27 +147,48 @@ def attendance():
 
 @app.route('/submit_attendance', methods=['POST'])
 def submit_attendance():
-    try:
-        new_attendance = Attendance(
-            name=request.form['name'],
-            matric_no=request.form['matric_no'],
-            course=request.form['course']
-            # timestamp will be automatically set
+    name = request.form.get('name')
+    matric_no = request.form.get('matric_no')
+    course = request.form.get('course')
+    
+    # Check if student exists and is active
+    student = Student.query.filter_by(matric_no=matric_no).first()
+    
+    if student and not student.active:
+        flash('Your account is currently deactivated. Please contact administrator.', 'danger')
+        return redirect(url_for('attendance'))
+    
+    if student:
+        # Update existing record
+        student.name = name
+        student.course = course
+        student.timestamp = datetime.utcnow()
+    else:
+        # Create new record
+        student = Student(
+            name=name,
+            matric_no=matric_no,
+            course=course,
+            active=True  # Default to active when creating new
         )
-        db.session.add(new_attendance)
-        db.session.commit()
-        flash('Attendance recorded successfully!', 'success')
-    except Exception as e:
-        db.session.rollback()
-        flash(f'Error: {str(e)}', 'danger')
+        db.session.add(student)
+    
+    db.session.commit()
+    flash('Attendance submitted successfully!', 'success')
     return redirect(url_for('attendance'))
 
 
 # Records Route (Protected)
 @app.route('/records')
 def records():
-    records = Attendance.query.order_by(Attendance.timestamp.desc()).all()
-    return render_template('records.html', records=records)
+    records = Student.query.order_by(Student.timestamp.desc()).all()
+    active_count = Student.query.filter_by(active=True).count()
+    inactive_count = Student.query.filter_by(active=False).count()
+    return render_template('records.html', 
+                         records=records,
+                         active_count=active_count,
+                         inactive_count=inactive_count,
+                         now=datetime.utcnow())
 
 
 # Download PDF route
@@ -228,16 +249,17 @@ def delete_record(record_id):
 
 @app.route('/toggle_status/<int:student_id>', methods=['POST'])
 def toggle_status(student_id):
-    student = Student.query.get_or_404(student_id)  # Assuming you have a Student model
+    student = Student.query.get_or_404(student_id)
     action = request.form.get('action')
     
     if action == 'activate':
         student.active = True
+        flash(f'{student.name}\'s account has been activated successfully!', 'success')
     elif action == 'deactivate':
         student.active = False
+        flash(f'{student.name}\'s account has been deactivated successfully!', 'warning')
     
     db.session.commit()
-    flash(f'Student account has been {action}d successfully!', 'success')
     return redirect(url_for('records'))
 
 
