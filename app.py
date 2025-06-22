@@ -283,8 +283,8 @@ def records():
 @app.route('/download/all/csv')
 def download_all_csv():
     try:
-        # Get all attendance records with proper ordering
-        all_records = Attendance.query.order_by(Attendance.timestamp.desc()).all()
+        # Get all student records with proper ordering (using StudentRecord model)
+        all_records = StudentRecord.query.order_by(StudentRecord.timestamp.desc()).all()
         
         # Create CSV output in memory
         output = io.StringIO()
@@ -296,18 +296,22 @@ def download_all_csv():
             'Date', 'Time', 'Status', 'Record ID'
         ])
         
-        # Write data rows with proper formatting
-        for idx, record in enumerate(all_records, 1):
-            writer.writerow([
-                idx,
-                record.name,
-                record.matric_no,
-                record.course,
-                record.timestamp.strftime('%Y-%m-%d'),
-                record.timestamp.strftime('%H:%M'),
-                'Active' if record.active else 'Inactive',
-                record.id
-            ])
+        if not all_records:
+            # Write a message when no records exist
+            writer.writerow(['No attendance records found', '', '', '', '', '', '', ''])
+        else:
+            # Write data rows with proper formatting
+            for idx, record in enumerate(all_records, 1):
+                writer.writerow([
+                    idx,
+                    record.name,
+                    record.matric_no,
+                    record.course,
+                    record.timestamp.strftime('%Y-%m-%d'),
+                    record.timestamp.strftime('%H:%M:%S'),
+                    'Active' if record.active else 'Inactive',
+                    record.id
+                ])
         
         output.seek(0)
         
@@ -315,9 +319,12 @@ def download_all_csv():
         filename = f"attendance_records_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
         
         return Response(
-            output.getvalue().encode('utf-8'),
+            output.getvalue(),
             mimetype='text/csv',
-            headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+            headers={
+                'Content-Disposition': f'attachment; filename="{filename}"',
+                'Content-Type': 'text/csv; charset=utf-8'
+            }
         )
     except Exception as e:
         app.logger.error(f"CSV export error: {str(e)}")
@@ -326,32 +333,43 @@ def download_all_csv():
 @app.route('/download/all/pdf')
 def download_all_pdf():
     try:
-        # Get all attendance records
-        all_records = Attendance.query.order_by(Attendance.timestamp.desc()).all()
+        # Get all student records (using StudentRecord model)
+        all_records = StudentRecord.query.order_by(StudentRecord.timestamp.desc()).all()
         
         # Create PDF buffer
         buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=letter,
+            rightMargin=30,
+            leftMargin=30,
+            topMargin=30,
+            bottomMargin=30,
+            title="Student Attendance Records"
+        )
         
         # Create data for table
-        data = [
-            ['#', 'Name', 'Matric No.', 'Course', 'Date', 'Time', 'Status', 'Record ID']
-        ]
+        data = [['#', 'Name', 'Matric No.', 'Course', 'Date', 'Time', 'Status', 'Record ID']]
         
-        for idx, record in enumerate(all_records, 1):
-            data.append([
-                str(idx),
-                record.name,
-                record.matric_no,
-                record.course,
-                record.timestamp.strftime('%Y-%m-%d'),
-                record.timestamp.strftime('%H:%M'),
-                'Active' if record.active else 'Inactive',
-                str(record.id)
-            ])
+        if not all_records:
+            # Add message when no records exist
+            data.append(['No attendance records found', '', '', '', '', '', '', ''])
+        else:
+            for idx, record in enumerate(all_records, 1):
+                data.append([
+                    str(idx),
+                    record.name,
+                    record.matric_no,
+                    record.course,
+                    record.timestamp.strftime('%Y-%m-%d'),
+                    record.timestamp.strftime('%H:%M:%S'),
+                    'Active' if record.active else 'Inactive',
+                    str(record.id)
+                ])
         
-        # Create table with automatic column widths
-        table = Table(data, repeatRows=1)
+        # Create table with column widths
+        col_widths = ['5%', '20%', '15%', '15%', '15%', '10%', '10%', '10%']
+        table = Table(data, colWidths=col_widths, repeatRows=1)
         
         # Add style
         style = TableStyle([
@@ -373,12 +391,12 @@ def download_all_pdf():
         styles = getSampleStyleSheet()
         
         # Add title
-        title = Paragraph("STUDENT ATTENDANCE RECORDS", styles['Title'])
+        title = Paragraph("<b>STUDENT ATTENDANCE RECORDS</b>", styles['Title'])
         elements.append(title)
         
         # Add generation info
         gen_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        info_text = f"Generated on: {gen_date} | Total Records: {len(all_records)}"
+        info_text = f"<b>Generated on:</b> {gen_date} | <b>Total Records:</b> {len(all_records)}"
         info_para = Paragraph(info_text, styles['Normal'])
         elements.append(info_para)
         
@@ -394,11 +412,13 @@ def download_all_pdf():
         # Generate filename
         filename = f"attendance_records_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
         
-        return send_file(
-            buffer,
-            as_attachment=True,
-            download_name=filename,
-            mimetype='application/pdf'
+        return Response(
+            buffer.getvalue(),
+            mimetype='application/pdf',
+            headers={
+                'Content-Disposition': f'attachment; filename="{filename}"',
+                'Content-Type': 'application/pdf'
+            }
         )
     except Exception as e:
         app.logger.error(f"PDF export error: {str(e)}")

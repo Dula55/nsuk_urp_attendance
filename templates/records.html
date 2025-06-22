@@ -34,10 +34,10 @@
 
             <div class="d-flex justify-content-between mb-4">
                 <div class="export-buttons">
-                    <a href="{{ url_for('download_all_csv') }}" class="btn btn-outline-success">
+                    <a href="{{ url_for('download_all_csv') }}" class="btn btn-outline-success" id="exportCsvBtn">
                         <i class="fas fa-file-csv mr-2"></i> Export as CSV
                     </a>
-                    <a href="{{ url_for('download_all_pdf') }}" class="btn btn-outline-danger ml-2">
+                    <a href="{{ url_for('download_all_pdf') }}" class="btn btn-outline-danger ml-2" id="exportPdfBtn">
                         <i class="fas fa-file-pdf mr-2"></i> Export as PDF
                     </a>
                 </div>
@@ -117,6 +117,52 @@
 <div id="toastContainer" class="position-fixed bottom-0 end-0 p-3" style="z-index: 11"></div>
 
 <script>
+// Function to handle export buttons
+function setupExportButtons() {
+    const exportCsvBtn = document.getElementById('exportCsvBtn');
+    const exportPdfBtn = document.getElementById('exportPdfBtn');
+    
+    if (exportCsvBtn) {
+        exportCsvBtn.addEventListener('click', function(e) {
+            if ({{ records|length }} === 0) {
+                e.preventDefault();
+                showToast('No records to export', 'warning');
+            } else {
+                // Show loading state
+                const originalText = exportCsvBtn.innerHTML;
+                exportCsvBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Generating CSV...';
+                exportCsvBtn.disabled = true;
+                
+                // Re-enable after a short delay
+                setTimeout(() => {
+                    exportCsvBtn.innerHTML = originalText;
+                    exportCsvBtn.disabled = false;
+                }, 2000);
+            }
+        });
+    }
+    
+    if (exportPdfBtn) {
+        exportPdfBtn.addEventListener('click', function(e) {
+            if ({{ records|length }} === 0) {
+                e.preventDefault();
+                showToast('No records to export', 'warning');
+            } else {
+                // Show loading state
+                const originalText = exportPdfBtn.innerHTML;
+                exportPdfBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Generating PDF...';
+                exportPdfBtn.disabled = true;
+                
+                // Re-enable after a short delay
+                setTimeout(() => {
+                    exportPdfBtn.innerHTML = originalText;
+                    exportPdfBtn.disabled = false;
+                }, 2000);
+            }
+        });
+    }
+}
+
 // Function to handle status toggle
 async function handleStatusToggle(button) {
     const studentId = button.dataset.studentId;
@@ -279,6 +325,11 @@ function showToast(message, type = 'info') {
         setTimeout(() => toast.remove(), 500);
     }, 5000);
 }
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    setupExportButtons();
+});
 </script>
 
 <style>
@@ -307,6 +358,9 @@ function showToast(message, type = 'info') {
     }
     .btn:disabled {
         opacity: 0.7;
+    }
+    .export-buttons .btn {
+        min-width: 150px;
     }
 </style>
 {% endblock %}
