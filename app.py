@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, Response, send_file
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from datetime import datetime, timezone  # Updated for UTC timezone
@@ -15,8 +15,10 @@ from flask_wtf.csrf import validate_csrf
 from wtforms import StringField, PasswordField, SubmitField
 from wtforms.validators import DataRequired
 from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
-from flask_wtf.csrf import CSRFProtect
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
+from flask_wtf.csrf import CSRFProtect, generate_csrf
 
 
 import logging
@@ -112,6 +114,7 @@ def index():
 # Register Route
 @app.route('/register', methods=['GET', 'POST'])
 def register():
+    csrf_token = generate_csrf()
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
@@ -131,7 +134,7 @@ def register():
         flash('Registration successful! Please login.', 'success')
         return redirect(url_for('login'))
     
-    return render_template('register.html')
+    return render_template('register.html', csrf_token=csrf_token)
 
 # Login Route
 @app.route('/login', methods=['GET', 'POST'])
@@ -203,12 +206,22 @@ def submit_attendance():
         
         # Validate required fields
         if not all([name, matric_no, course]):
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({
+                    'success': False,
+                    'message': 'All fields are required!'
+                }), 400
             flash('All fields are required!', 'danger')
             return redirect(url_for('attendance'))
         
         # Check for existing record
         existing = StudentRecord.query.filter_by(matric_no=matric_no).first()
         if existing:
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({
+                    'success': False,
+                    'message': 'This matric number already exists!'
+                }), 400
             flash('This matric number already exists!', 'warning')
             return redirect(url_for('attendance'))
         
@@ -223,13 +236,31 @@ def submit_attendance():
         
         db.session.add(new_record)
         db.session.commit()
+        
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'success': True,
+                'message': 'Attendance submitted successfully!',
+                'record': {
+                    'name': name,
+                    'matric_no': matric_no,
+                    'course': course
+                }
+            })
+        
         flash('Attendance submitted successfully!', 'success')
+        return redirect(url_for('attendance'))
         
     except Exception as e:
         db.session.rollback()
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'success': False,
+                'message': f'Error submitting attendance: {str(e)}'
+            }), 500
+        
         flash(f'Error submitting attendance: {str(e)}', 'danger')
-    
-    return redirect(url_for('attendance'))
+        return redirect(url_for('attendance'))
 
 
 # Records Route (Protected)
@@ -251,47 +282,127 @@ def records():
 # Download PDF route
 @app.route('/download/all/csv')
 def download_all_csv():
-    all_records = Attendance.query.all()
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(['Name', 'Matric Number', 'Course'])
-    for record in all_records:
-        writer.writerow([record.name, record.matric_no, record.course])
-    output.seek(0)
-    return Response(
-        output,
-        mimetype='text/csv',
-        headers={'Content-Disposition': 'attachment; filename=all_attendance_records.csv'}
-    )
+    try:
+        # Get all attendance records with proper ordering
+        all_records = Attendance.query.order_by(Attendance.timestamp.desc()).all()
+        
+        # Create CSV output in memory
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Write comprehensive header row
+        writer.writerow([
+            'No.', 'Name', 'Matric Number', 'Course',
+            'Date', 'Time', 'Status', 'Record ID'
+        ])
+        
+        # Write data rows with proper formatting
+        for idx, record in enumerate(all_records, 1):
+            writer.writerow([
+                idx,
+                record.name,
+                record.matric_no,
+                record.course,
+                record.timestamp.strftime('%Y-%m-%d'),
+                record.timestamp.strftime('%H:%M'),
+                'Active' if record.active else 'Inactive',
+                record.id
+            ])
+        
+        output.seek(0)
+        
+        # Generate filename with current date
+        filename = f"attendance_records_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        
+        return Response(
+            output.getvalue().encode('utf-8'),
+            mimetype='text/csv',
+            headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+        )
+    except Exception as e:
+        app.logger.error(f"CSV export error: {str(e)}")
+        return "Error generating CSV file", 500
 
 @app.route('/download/all/pdf')
 def download_all_pdf():
-    all_records = Attendance.query.all()
-    buffer = io.BytesIO()
-    p = canvas.Canvas(buffer, pagesize=letter)
-    
-    y_position = 750
-    p.drawString(100, y_position, "Attendance Records")
-    y_position -= 30
-    
-    for record in all_records:
-        p.drawString(100, y_position, f'Name: {record.name}')
-        p.drawString(100, y_position-20, f'Matric Number: {record.matric_no}')
-        p.drawString(100, y_position-40, f'Course: {record.course}')
-        y_position -= 60
-        if y_position < 100:  # Add new page if running out of space
-            p.showPage()
-            y_position = 750
-    
-    p.showPage()
-    p.save()
-    buffer.seek(0)
-    return send_file(
-        buffer,
-        as_attachment=True,
-        download_name='all_attendance_records.pdf',
-        mimetype='application/pdf'
-    )
+    try:
+        # Get all attendance records
+        all_records = Attendance.query.order_by(Attendance.timestamp.desc()).all()
+        
+        # Create PDF buffer
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+        
+        # Create data for table
+        data = [
+            ['#', 'Name', 'Matric No.', 'Course', 'Date', 'Time', 'Status', 'Record ID']
+        ]
+        
+        for idx, record in enumerate(all_records, 1):
+            data.append([
+                str(idx),
+                record.name,
+                record.matric_no,
+                record.course,
+                record.timestamp.strftime('%Y-%m-%d'),
+                record.timestamp.strftime('%H:%M'),
+                'Active' if record.active else 'Inactive',
+                str(record.id)
+            ])
+        
+        # Create table with automatic column widths
+        table = Table(data, repeatRows=1)
+        
+        # Add style
+        style = TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2c3e50')),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0,0), (-1,0), 10),
+            ('BOTTOMPADDING', (0,0), (-1,0), 12),
+            ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#ecf0f1')),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#bdc3c7')),
+            ('FONTSIZE', (0,1), (-1,-1), 9),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ])
+        table.setStyle(style)
+        
+        # Build PDF elements
+        elements = []
+        styles = getSampleStyleSheet()
+        
+        # Add title
+        title = Paragraph("STUDENT ATTENDANCE RECORDS", styles['Title'])
+        elements.append(title)
+        
+        # Add generation info
+        gen_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        info_text = f"Generated on: {gen_date} | Total Records: {len(all_records)}"
+        info_para = Paragraph(info_text, styles['Normal'])
+        elements.append(info_para)
+        
+        elements.append(Spacer(1, 24))
+        
+        # Add table
+        elements.append(table)
+        
+        # Generate PDF
+        doc.build(elements)
+        buffer.seek(0)
+        
+        # Generate filename
+        filename = f"attendance_records_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        
+        return send_file(
+            buffer,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/pdf'
+        )
+    except Exception as e:
+        app.logger.error(f"PDF export error: {str(e)}")
+        return "Error generating PDF file", 500
 
 # Delete record route
 @app.route('/delete_record/<int:record_id>', methods=['POST'])
