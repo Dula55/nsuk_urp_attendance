@@ -1,20 +1,20 @@
-# from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, Response, send_file
-# from flask_sqlalchemy import SQLAlchemy
-# from flask_migrate import Migrate
-# from datetime import datetime, timezone  # Updated for UTC timezone
-# from sqlalchemy import Column, Integer, String, DateTime, create_engine
-# from sqlalchemy.ext.declarative import declarative_base
-# from flask import Response, send_file
-# from werkzeug.security import generate_password_hash, check_password_hash
-# from werkzeug.exceptions import NotFound, Forbidden
-# from sqlalchemy.exc import IntegrityError
-# import io
-# import csv
-# from flask_wtf import FlaskForm
-# from flask_wtf.csrf import validate_csrf
-# from wtforms import StringField, PasswordField, SubmitField
-# from wtforms.validators import DataRequired
-# from reportlab.lib.pagesizes import letter
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, Response, send_file
+from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
+from datetime import datetime, timezone  # Updated for UTC timezone
+from sqlalchemy import Column, Integer, String, DateTime, create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from flask import Response, send_file
+from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.exceptions import NotFound, Forbidden
+from sqlalchemy.exc import IntegrityError
+import io
+import csv
+from flask_wtf import FlaskForm
+from flask_wtf.csrf import validate_csrf
+from wtforms import StringField, PasswordField, SubmitField
+from wtforms.validators import DataRequired
+from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
