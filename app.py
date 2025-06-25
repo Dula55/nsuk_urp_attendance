@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, Response, send_file
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from datetime import datetime, timezone  # Updated for UTC timezone
+from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, DateTime, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from flask import Response, send_file
@@ -12,14 +12,14 @@ import io
 import csv
 from flask_wtf import FlaskForm
 from flask_wtf.csrf import validate_csrf
-from wtforms import StringField, PasswordField, SubmitField
+from wtforms import StringField, PasswordField, SubmitField, SelectField
 from wtforms.validators import DataRequired
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
 from flask_wtf.csrf import CSRFProtect, generate_csrf
-
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 
 import logging
 from logging.handlers import RotatingFileHandler
@@ -38,26 +38,42 @@ if not app.debug:
     app.logger.addHandler(handler)
 
 # Database configuration
+app.config['SECRET_KEY'] = 'your-secret-key-here'  # Should be a long, random string
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///attendance.db'  # or your DB URI
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['WTF_CSRF_ENABLED'] = True
 
 # Initialize database and migration
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 
-
-# Create tables
-with app.app_context():
-    db.create_all()
-
+# Initialize Flask-Login
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
 
 # User Model
-class User(db.Model):
+class User(UserMixin, db.Model):
+    __tablename__ = 'user'
+    
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(100), unique=True, nullable=False)
-    password = db.Column(db.String(200), nullable=False)
-    role = db.Column(db.String(50), nullable=False)  # 'lecturer' or 'student'
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password = db.Column(db.String(120), nullable=False)
+    role = db.Column(db.String(20), nullable=False)
+    active = db.Column(db.Boolean, default=True)  # THIS MUST EXIST
 
+@property
+def is_active(self):
+    return self.active  # or whatever your active status field is called
+# User loader function required by Flask-Login
+
+
+@login_manager.user_loader
+def load_user(user_id):
+    user = User.query.get(user_id)
+    if user and user.active:  # Use your existing active attribute
+        return user
+    return None
 
 class Student(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -106,6 +122,12 @@ class LoginForm(FlaskForm):
     password = PasswordField('Password', validators=[DataRequired()])
     submit = SubmitField('Login')
 
+
+class RegistrationForm(FlaskForm):
+    username = StringField('Username', validators=[DataRequired()])
+    password = PasswordField('Password', validators=[DataRequired()])
+    role = SelectField('Role', choices=[('student', 'Student'), ('lecturer', 'Lecturer')], validators=[DataRequired()])
+
 # Home Route
 @app.route('/')
 def index():
@@ -114,11 +136,21 @@ def index():
 # Register Route
 @app.route('/register', methods=['GET', 'POST'])
 def register():
-    csrf_token = generate_csrf()
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        role = request.form['role']
+    lecturer_exists = User.query.filter_by(role='lecturer').first() is not None
+    form = RegistrationForm()
+    if form.validate_on_submit():
+        # Always use .get() to avoid KeyError
+        role = request.form.get('role')
+        username = request.form.get('username')  # You were missing this line
+        password = request.form.get('password')  # You were missing this line
+        
+        if not role:
+            flash('Role is required', 'danger')
+            return redirect(url_for('register'))
+        
+        if not username or not password:  # Added validation for username and password
+            flash('Username and password are required', 'danger')
+            return redirect(url_for('register'))
         
         existing_user = User.query.filter_by(username=username).first()
         if existing_user:
@@ -134,8 +166,9 @@ def register():
         flash('Registration successful! Please login.', 'success')
         return redirect(url_for('login'))
     
-    return render_template('register.html', csrf_token=csrf_token)
-
+    return render_template('register.html', form=form, lecturer_exists=lecturer_exists)
+    
+    
 # Login Route
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -148,8 +181,8 @@ def login():
         user = User.query.filter_by(username=username).first()
         
         if user and check_password_hash(user.password, password):
-            session['user_id'] = user.id
-            session['role'] = user.role
+            login_user(user)
+            flash('Login successful!', 'success')
             
             if user.role == 'lecturer':
                 return redirect(url_for('records'))
@@ -160,26 +193,24 @@ def login():
     
     return render_template('login.html', form=form)
 
-
-
 # Logout Route
 @app.route('/logout')
+@login_required
 def logout():
-    session.clear()
+    logout_user()
     flash('You have been logged out.', 'success')
     return redirect(url_for('index'))
 
 # Attendance Route (Protected)
 @app.route('/attendance', methods=['GET', 'POST'])
+@login_required
 def attendance():
-    # Authentication check
-    if 'user_id' not in session or session['role'] != 'student':
+    if current_user.role != 'student':
         flash('Please login as student to access this page', 'danger')
         return redirect(url_for('login'))
     
     form = AttendanceForm()
     
-    # Form submission handling
     if form.validate_on_submit():
         name = form.name.data
         matric_no = form.matric_no.data
@@ -191,20 +222,16 @@ def attendance():
         
         return render_template('success.html', record=new_record)
     
-    # Render template with form (for both GET and failed POST)
     return render_template('attendance.html', form=form)
 
-
-
 @app.route('/submit_attendance', methods=['POST'])
+@login_required
 def submit_attendance():
     try:
-        # Get form data
         name = request.form.get('name')
         matric_no = request.form.get('matric_no')
         course = request.form.get('course')
         
-        # Validate required fields
         if not all([name, matric_no, course]):
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify({
@@ -214,7 +241,6 @@ def submit_attendance():
             flash('All fields are required!', 'danger')
             return redirect(url_for('attendance'))
         
-        # Check for existing record
         existing = StudentRecord.query.filter_by(matric_no=matric_no).first()
         if existing:
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -225,7 +251,6 @@ def submit_attendance():
             flash('This matric number already exists!', 'warning')
             return redirect(url_for('attendance'))
         
-        # Create new record
         new_record = StudentRecord(
             name=name,
             matric_no=matric_no,
@@ -262,14 +287,15 @@ def submit_attendance():
         flash(f'Error submitting attendance: {str(e)}', 'danger')
         return redirect(url_for('attendance'))
 
-
 # Records Route (Protected)
 @app.route('/records')
+@login_required
 def records():
-    # Get all records sorted by timestamp (newest first)
-    all_records = StudentRecord.query.order_by(StudentRecord.timestamp.desc()).all()
+    if current_user.role != 'lecturer':
+        flash('You need lecturer privileges to access this page', 'danger')
+        return redirect(url_for('index'))
     
-    # Count active and inactive records
+    all_records = StudentRecord.query.order_by(StudentRecord.timestamp.desc()).all()
     active_count = StudentRecord.query.filter_by(active=True).count()
     inactive_count = StudentRecord.query.filter_by(active=False).count()
     

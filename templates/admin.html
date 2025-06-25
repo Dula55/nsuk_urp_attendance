@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Dashboard</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+</head>
+<body>
+    <div class="container-fluid mt-3">
+        <div class="row">
+            <div class="col-md-12">
+                <h2 class="mb-4">Admin Dashboard</h2>
+                
+                <!-- Pending Approvals Section -->
+                <div class="card mb-4">
+                    <div class="card-header bg-warning text-white">
+                        <h4><i class="fas fa-user-clock"></i> Pending Approvals</h4>
+                    </div>
+                    <div class="card-body">
+                        {% if pending_users %}
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Username</th>
+                                        <th>Role</th>
+                                        <th>Registration Date</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for user in pending_users %}
+                                    <tr>
+                                        <td>{{ user.username }}</td>
+                                        <td>{{ user.role|capitalize }}</td>
+                                        <td>{{ user.registration_date.strftime('%Y-%m-%d %H:%M') }}</td>
+                                        <td>
+                                            <a href="{{ url_for('approve_user', user_id=user.id) }}" class="btn btn-sm btn-success">
+                                                <i class="fas fa-check"></i> Approve
+                                            </a>
+                                            <a href="{{ url_for('reject_user', user_id=user.id) }}" class="btn btn-sm btn-danger">
+                                                <i class="fas fa-times"></i> Reject
+                                            </a>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <div class="alert alert-info">No pending approvals.</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Active Users Section -->
+                <div class="card mb-4">
+                    <div class="card-header bg-primary text-white">
+                        <h4><i class="fas fa-users"></i> Active Users</h4>
+                    </div>
+                    <div class="card-body">
+                        {% if active_users %}
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Username</th>
+                                        <th>Role</th>
+                                        <th>Status</th>
+                                        <th>Registration Date</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for user in active_users %}
+                                    <tr>
+                                        <td>{{ user.username }}</td>
+                                        <td>{{ user.role|capitalize }}</td>
+                                        <td>
+                                            <span class="badge badge-success">Active</span>
+                                        </td>
+                                        <td>{{ user.registration_date.strftime('%Y-%m-%d %H:%M') }}</td>
+                                        <td>
+                                            {% if user.role == 'student' %}
+                                                <a href="{{ url_for('toggle_user_status', user_id=user.id) }}" class="btn btn-sm btn-warning">
+                                                    <i class="fas fa-user-slash"></i> Deactivate
+                                                </a>
+                                            {% endif %}
+                                            <a href="{{ url_for('delete_user', user_id=user.id) }}" class="btn btn-sm btn-danger">
+                                                <i class="fas fa-trash"></i> Delete
+                                            </a>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <div class="alert alert-info">No active users.</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Inactive Students Section -->
+                <div class="card">
+                    <div class="card-header bg-secondary text-white">
+                        <h4><i class="fas fa-user-slash"></i> Inactive Students</h4>
+                    </div>
+                    <div class="card-body">
+                        {% if inactive_students %}
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Username</th>
+                                        <th>Registration Date</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for user in inactive_students %}
+                                    <tr>
+                                        <td>{{ user.username }}</td>
+                                        <td>{{ user.registration_date.strftime('%Y-%m-%d %H:%M') }}</td>
+                                        <td>
+                                            <a href="{{ url_for('toggle_user_status', user_id=user.id) }}" class="btn btn-sm btn-success">
+                                                <i class="fas fa-user-check"></i> Activate
+                                            </a>
+                                            <a href="{{ url_for('delete_user', user_id=user.id) }}" class="btn btn-sm btn-danger">
+                                                <i class="fas fa-trash"></i> Delete
+                                            </a>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <div class="alert alert-info">No inactive students.</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+</body>
+</html>
