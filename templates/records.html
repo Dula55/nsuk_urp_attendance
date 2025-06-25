@@ -63,6 +63,7 @@
                             <th><i class="fas fa-id-card mr-1"></i> Matric Number</th>
                             <th><i class="fas fa-book mr-1"></i> Course</th>
                             <th><i class="fas fa-calendar-alt mr-1"></i> Date/Time</th>
+                            <th><i class="fas fa-map-marker-alt mr-1"></i> Location</th>
                             <th><i class="fas fa-user-shield mr-1"></i> Status</th>
                             <th><i class="fas fa-cog mr-1"></i> Actions</th>
                         </tr>
@@ -78,6 +79,19 @@
                                 <span class="text-dark">
                                     {{ record.timestamp.strftime('%Y-%m-%d %H:%M') }}
                                 </span>
+                            </td>
+                            <td>
+                                {% if record.latitude and record.longitude %}
+                                <a href="https://maps.google.com/?q={{ record.latitude }},{{ record.longitude }}" 
+                                   target="_blank" 
+                                   class="btn btn-sm btn-outline-primary"
+                                   data-toggle="tooltip" 
+                                   title="Accuracy: {{ record.accuracy|round(2) }} meters">
+                                    <i class="fas fa-map-marked-alt"></i> View Map
+                                </a>
+                                {% else %}
+                                <span class="text-muted">N/A</span>
+                                {% endif %}
                             </td>
                             <td>
                                 <span class="badge {% if record.active %}badge-success{% else %}badge-danger{% endif %} status-badge" data-status="{{ 'active' if record.active else 'inactive' }}">
