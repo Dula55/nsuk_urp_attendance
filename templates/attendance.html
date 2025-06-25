@@ -32,6 +32,9 @@
             
             <form id="attendanceForm" method="POST" action="{{ url_for('submit_attendance') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" id="latitude" name="latitude">
+                <input type="hidden" id="longitude" name="longitude">
+                <input type="hidden" id="accuracy" name="accuracy">
                 
                 <div class="mb-3">
                     <label for="name" class="form-label">Full Name</label>
@@ -44,6 +47,11 @@
                 <div class="mb-3">
                     <label for="course" class="form-label">Course</label>
                     <input type="text" class="form-control" id="course" name="course" required>
+                </div>
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle mr-2"></i> 
+                    Your attendance will be recorded with your current location coordinates.
+                    <span id="locationStatus">Please enable location services.</span>
                 </div>
                 <div class="d-flex justify-content-between">
                     <button type="submit" class="btn btn-success" id="submitBtn">
@@ -69,8 +77,82 @@
 </div>
 
 <script>
+// Get user's geolocation
+function getLocation() {
+    const locationStatus = document.getElementById('locationStatus');
+    const latitudeInput = document.getElementById('latitude');
+    const longitudeInput = document.getElementById('longitude');
+    const accuracyInput = document.getElementById('accuracy');
+    
+    if (navigator.geolocation) {
+        locationStatus.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Getting location...';
+        
+        navigator.geolocation.getCurrentPosition(
+            function(position) {
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+                const acc = position.coords.accuracy;
+                
+                latitudeInput.value = lat;
+                longitudeInput.value = lng;
+                accuracyInput.value = acc;
+                
+                locationStatus.innerHTML = `<i class="fas fa-check-circle text-success"></i> Location captured (Accuracy: ${Math.round(acc)} meters)`;
+            },
+            function(error) {
+                let errorMessage = "Location access denied. Attendance submission requires location.";
+                switch(error.code) {
+                    case error.PERMISSION_DENIED:
+                        errorMessage = "Location access denied. Please enable location services to submit attendance.";
+                        break;
+                    case error.POSITION_UNAVAILABLE:
+                        errorMessage = "Location information unavailable.";
+                        break;
+                    case error.TIMEOUT:
+                        errorMessage = "Location request timed out. Please try again.";
+                        break;
+                    case error.UNKNOWN_ERROR:
+                        errorMessage = "An unknown error occurred while getting location.";
+                        break;
+                }
+                locationStatus.innerHTML = `<i class="fas fa-exclamation-triangle text-danger"></i> ${errorMessage}`;
+                
+                // Disable submit button if location not available
+                document.getElementById('submitBtn').disabled = true;
+            },
+            {
+                enableHighAccuracy: true,
+                timeout: 10000,
+                maximumAge: 0
+            }
+        );
+    } else {
+        locationStatus.innerHTML = '<i class="fas fa-exclamation-triangle text-danger"></i> Geolocation is not supported by this browser.';
+        document.getElementById('submitBtn').disabled = true;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Get location when page loads
+    getLocation();
+    
+    // Check if user is inactive and prevent form submission
+    {% if current_user is defined and current_user.is_authenticated and not current_user.active %}
+        document.getElementById('attendanceForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            showFlashMessage('Your account is inactive. Please contact an administrator.', 'danger');
+        });
+    {% endif %}
+});
+
 document.getElementById('attendanceForm').addEventListener('submit', async function(e) {
     e.preventDefault();
+    
+    // Check if location is available
+    if (!document.getElementById('latitude').value || !document.getElementById('longitude').value) {
+        showFlashMessage('Location is required to submit attendance. Please enable location services.', 'danger');
+        return;
+    }
     
     const form = e.target;
     const submitBtn = document.getElementById('submitBtn');
@@ -100,11 +182,14 @@ document.getElementById('attendanceForm').addEventListener('submit', async funct
             successContent.innerHTML = `
                 Attendance marked successfully for <strong>${data.record.name}</strong> 
                 (${data.record.matric_no}) in <strong>${data.record.course}</strong>.
+                <br>Location: ${data.record.latitude}, ${data.record.longitude} (Accuracy: ${Math.round(data.record.accuracy)}m)
             `;
             successMessage.classList.remove('d-none');
             
-            // Clear form on success
-            form.reset();
+            // Clear form on success (except location)
+            document.getElementById('name').value = '';
+            document.getElementById('matric_no').value = '';
+            document.getElementById('course').value = '';
             
             // Auto-hide success message after 5 seconds
             setTimeout(() => {
@@ -147,16 +232,5 @@ function showFlashMessage(message, category) {
         setTimeout(() => alert.remove(), 500);
     }, 5000);
 }
-
-// Check if user is inactive and prevent form submission
-document.addEventListener('DOMContentLoaded', function() {
-    // This would be set by your Flask backend if the user is inactive
-    {% if current_user is defined and current_user.is_authenticated and not current_user.active %}
-        document.getElementById('attendanceForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            showFlashMessage('Your account is inactive. Please contact an administrator.', 'danger');
-        });
-    {% endif %}
-});
 </script>
 {% endblock %}
