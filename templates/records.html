@@ -103,9 +103,6 @@
                                         </div>
                                         <div class="dropdown-item-text small">
                                             Accuracy: {{ record.accuracy|round(2) }} meters
-                                            {% if record.accuracy > 50 %}
-                                            <span class="badge badge-warning ml-2">Low Precision</span>
-                                            {% endif %}
                                         </div>
                                         <div class="dropdown-divider"></div>
                                         <a class="dropdown-item" 

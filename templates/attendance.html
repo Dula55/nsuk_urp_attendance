@@ -94,47 +94,19 @@ function getLocation() {
     const locationInfo = document.getElementById('locationInfo');
     
     if (navigator.geolocation) {
-        locationStatus.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Getting precise location...';
+        locationStatus.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Getting location...';
         
-        // First try to get high accuracy position
         navigator.geolocation.getCurrentPosition(
             async function(position) {
-                let lat = position.coords.latitude;
-                let lng = position.coords.longitude;
-                let acc = position.coords.accuracy;
-                
-                // If accuracy is not good enough (more than 20 meters), try again
-                if (acc > 20) {
-                    locationStatus.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refining location accuracy...';
-                    
-                    // Try to get better accuracy with a new request
-                    const betterPosition = await new Promise((resolve) => {
-                        navigator.geolocation.getCurrentPosition(
-                            resolve,
-                            () => resolve(position), // Fallback to original position if error
-                            {
-                                enableHighAccuracy: true,
-                                timeout: 10000,
-                                maximumAge: 0
-                            }
-                        );
-                    });
-                    
-                    lat = betterPosition.coords.latitude;
-                    lng = betterPosition.coords.longitude;
-                    acc = betterPosition.coords.accuracy;
-                }
-                
-                // If we still don't have good accuracy, show warning but allow submission
-                if (acc > 20) {
-                    locationStatus.innerHTML = `<i class="fas fa-exclamation-triangle text-warning"></i> Location captured (Accuracy: ${Math.round(acc)} meters) - Not very precise`;
-                } else {
-                    locationStatus.innerHTML = `<i class="fas fa-check-circle text-success"></i> Location captured (Accuracy: ${Math.round(acc)} meters)`;
-                }
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+                const acc = position.coords.accuracy;
                 
                 latitudeInput.value = lat;
                 longitudeInput.value = lng;
                 accuracyInput.value = acc;
+                
+                locationStatus.innerHTML = `<i class="fas fa-check-circle text-success"></i> Location captured (Accuracy: ${Math.round(acc)} meters)`;
                 
                 // Get location name using reverse geocoding
                 try {
@@ -194,7 +166,7 @@ function getLocation() {
             },
             {
                 enableHighAccuracy: true,
-                timeout: 15000,  // Increased timeout to allow for more precise location
+                timeout: 10000,
                 maximumAge: 0
             }
         );
@@ -224,13 +196,6 @@ document.getElementById('attendanceForm').addEventListener('submit', async funct
     if (!document.getElementById('latitude').value || !document.getElementById('longitude').value) {
         showFlashMessage('Location is required to submit attendance. Please enable location services.', 'danger');
         return;
-    }
-    
-    const accuracy = parseFloat(document.getElementById('accuracy').value);
-    if (accuracy > 50) {  // Warn if accuracy is poor but still allow submission
-        if (!confirm(`Your location accuracy is ${Math.round(accuracy)} meters which is not very precise. Continue anyway?`)) {
-            return;
-        }
     }
     
     const form = e.target;
