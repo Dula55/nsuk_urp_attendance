@@ -240,6 +240,12 @@ def submit_attendance():
         matric_no = request.form.get('matric_no')
         course = request.form.get('course')
         
+        # Location data
+        latitude = request.form.get('latitude')
+        longitude = request.form.get('longitude')
+        accuracy = request.form.get('accuracy')
+        location_name = request.form.get('location_name')
+        
         if not all([name, matric_no, course]):
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify({
@@ -265,9 +271,9 @@ def submit_attendance():
             matric_no=matric_no,
             course=course,
             timestamp=datetime.now(),
-            latitude=latitude if latitude else None,
-            longitude=longitude if longitude else None,
-            accuracy=accuracy,
+            latitude=float(latitude) if latitude else None,
+            longitude=float(longitude) if longitude else None,
+            accuracy=float(accuracy) if accuracy else None,
             location_name=location_name,
             active=True
         )
