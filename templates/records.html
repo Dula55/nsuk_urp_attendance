@@ -81,14 +81,28 @@
                                 </span>
                             </td>
                             <td>
-                                {% if record.latitude and record.longitude %}
-                                    {% if record.location_name %}
-                                        {{ record.location_name }}
+                                {% if record.location_data %}
+                                    {% if record.location_data.name %}
+                                        {{ record.location_data.name }}
+                                    {% elif record.location_data.coordinates %}
+                                        {{ record.location_data.coordinates }}
                                     {% else %}
-                                        {{ record.latitude|round(6) }}, {{ record.longitude|round(6) }}
+                                        <span class="text-muted">Location recorded</span>
                                     {% endif %}
+                                {% elif record.latitude and record.longitude %}
+                                    {{ "%.6f, %.6f"|format(record.latitude, record.longitude) }}
                                 {% else %}
                                     <span class="text-muted">N/A</span>
+                                {% endif %}
+                                
+                                {% if record.latitude and record.longitude %}
+                                <a href="https://www.google.com/maps?q={{ record.latitude }},{{ record.longitude }}" 
+                                   target="_blank" 
+                                   class="btn btn-sm btn-link p-0 ml-1"
+                                   data-toggle="tooltip" 
+                                   title="View on map">
+                                    <i class="fas fa-external-link-alt"></i>
+                                </a>
                                 {% endif %}
                             </td>
                             <td>
@@ -443,6 +457,9 @@ document.addEventListener('DOMContentLoaded', function() {
     .dropdown-item-text.small {
         font-size: 0.85rem;
         padding: 0.25rem 1.5rem;
+    }
+    .location-data {
+        font-family: monospace;
     }
 </style>
 {% endblock %}
