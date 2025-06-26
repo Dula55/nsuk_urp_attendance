@@ -354,11 +354,12 @@ def download_all_csv():
         
         writer.writerow([
             'No.', 'Name', 'Matric Number', 'Course',
-            'Date', 'Time', 'Status', 'Record ID'
+            'Date', 'Time', 'Status', 'Latitude', 
+            'Longitude', 'Accuracy', 'Location Name', 'Record ID'
         ])
         
         if not all_records:
-            writer.writerow(['No attendance records found', '', '', '', '', '', '', ''])
+            writer.writerow(['No attendance records found', '', '', '', '', '', '', '', '', '', ''])
         else:
             for idx, record in enumerate(all_records, 1):
                 writer.writerow([
@@ -369,6 +370,10 @@ def download_all_csv():
                     record.timestamp.strftime('%Y-%m-%d'),
                     record.timestamp.strftime('%H:%M:%S'),
                     'Active' if record.active else 'Inactive',
+                    record.latitude if record.latitude else 'N/A',
+                    record.longitude if record.longitude else 'N/A',
+                    record.accuracy if record.accuracy else 'N/A',
+                    record.location_name if record.location_name else 'N/A',
                     record.id
                 ])
         
@@ -389,7 +394,6 @@ def download_all_csv():
         flash('Error generating CSV file', 'danger')
         return redirect(url_for('records'))
 
-# Download PDF route
 @app.route('/download/all/pdf')
 @login_required
 def download_all_pdf():
@@ -407,10 +411,12 @@ def download_all_pdf():
             title="Student Attendance Records"
         )
         
-        data = [['#', 'Name', 'Matric No.', 'Course', 'Date', 'Time', 'Status', 'Record ID']]
+        # Updated header with location columns
+        data = [['#', 'Name', 'Matric No.', 'Course', 'Date', 'Time', 'Status', 
+                'Latitude', 'Longitude', 'Accuracy', 'Location', 'Record ID']]
         
         if not all_records:
-            data.append(['No attendance records found', '', '', '', '', '', '', ''])
+            data.append(['No attendance records found', '', '', '', '', '', '', '', '', '', ''])
         else:
             for idx, record in enumerate(all_records, 1):
                 data.append([
@@ -421,10 +427,15 @@ def download_all_pdf():
                     record.timestamp.strftime('%Y-%m-%d'),
                     record.timestamp.strftime('%H:%M:%S'),
                     'Active' if record.active else 'Inactive',
+                    str(record.latitude) if record.latitude else 'N/A',
+                    str(record.longitude) if record.longitude else 'N/A',
+                    str(record.accuracy) if record.accuracy else 'N/A',
+                    record.location_name if record.location_name else 'N/A',
                     str(record.id)
                 ])
         
-        col_widths = ['5%', '20%', '15%', '15%', '15%', '10%', '10%', '10%']
+        # Adjusted column widths to accommodate new columns
+        col_widths = ['4%', '15%', '10%', '12%', '10%', '8%', '8%', '8%', '8%', '8%', '9%']
         table = Table(data, colWidths=col_widths, repeatRows=1)
         
         style = TableStyle([
@@ -432,19 +443,20 @@ def download_all_pdf():
             ('TEXTCOLOR', (0,0), (-1,0), colors.white),
             ('ALIGN', (0,0), (-1,-1), 'CENTER'),
             ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0,0), (-1,0), 10),
-            ('BOTTOMPADDING', (0,0), (-1,0), 12),
+            ('FONTSIZE', (0,0), (-1,0), 8),  # Smaller font size to fit more columns
+            ('BOTTOMPADDING', (0,0), (-1,0), 8),
             ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#ecf0f1')),
             ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#bdc3c7')),
-            ('FONTSIZE', (0,1), (-1,-1), 9),
+            ('FONTSIZE', (0,1), (-1,-1), 7),  # Smaller font size for data rows
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('WORDWRAP', (0,0), (-1,-1)),  # Enable word wrap for long text
         ])
         table.setStyle(style)
         
         elements = []
         styles = getSampleStyleSheet()
         
-        title = Paragraph("<b>STUDENT ATTENDANCE RECORDS</b>", styles['Title'])
+        title = Paragraph("<b>STUDENT ATTENDANCE RECORDS WITH LOCATION DATA</b>", styles['Title'])
         elements.append(title)
         
         gen_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -452,13 +464,20 @@ def download_all_pdf():
         info_para = Paragraph(info_text, styles['Normal'])
         elements.append(info_para)
         
-        elements.append(Spacer(1, 24))
+        elements.append(Spacer(1, 12))  # Smaller spacer
+        
+        # Add a note about location data
+        note = Paragraph("<i>Note: Location data is captured when available during attendance submission</i>", 
+                         styles['Italic'])
+        elements.append(note)
+        elements.append(Spacer(1, 12))
+        
         elements.append(table)
         
         doc.build(elements)
         buffer.seek(0)
         
-        filename = f"attendance_records_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        filename = f"attendance_records_with_location_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
         
         return Response(
             buffer.getvalue(),
@@ -472,6 +491,7 @@ def download_all_pdf():
         app.logger.error(f"PDF export error: {str(e)}")
         flash('Error generating PDF file', 'danger')
         return redirect(url_for('records'))
+    
 
 # Delete record route
 @app.route('/delete_record/<int:record_id>', methods=['POST'])
