@@ -129,6 +129,7 @@ const canvas = document.getElementById('faceCanvas');
 const ctx = canvas.getContext('2d');
 let stream = null;
 let faceCaptured = false;
+let isMobile = /Mobi|Android/i.test(navigator.userAgent);
 
 // Start video stream
 async function startVideo() {
@@ -143,8 +144,10 @@ async function startVideo() {
         };
         
         // Adjust constraints for mobile devices
-        if (/Mobi|Android/i.test(navigator.userAgent)) {
+        if (isMobile) {
             constraints.video.facingMode = { exact: "user" };
+            // Use the back camera if front camera not available
+            constraints.video.facingMode = { exact: "environment" };
         }
         
         stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -158,15 +161,32 @@ async function startVideo() {
         
     } catch (err) {
         console.error("Error accessing camera:", err);
-        showFlashMessage('Camera access denied. Face verification is required.', 'danger');
-        document.getElementById('captureBtn').disabled = true;
+        
+        // Try again with less specific constraints if first attempt fails
+        if (isMobile) {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: true,
+                    audio: false
+                });
+                video.srcObject = stream;
+                document.getElementById('captureBtn').disabled = false;
+            } catch (err2) {
+                console.error("Second camera attempt failed:", err2);
+                showFlashMessage('Camera access denied. Please enable camera permissions in your browser settings.', 'danger');
+                document.getElementById('captureBtn').disabled = true;
+            }
+        } else {
+            showFlashMessage('Camera access denied. Face verification is required.', 'danger');
+            document.getElementById('captureBtn').disabled = true;
+        }
     }
 }
 
 // Handle device orientation changes
 function handleOrientationChange() {
     // On mobile devices, restart the video stream when orientation changes
-    if (/Mobi|Android/i.test(navigator.userAgent)) {
+    if (isMobile) {
         if (stream) {
             stream.getTracks().forEach(track => track.stop());
         }
@@ -177,7 +197,6 @@ function handleOrientationChange() {
 // Capture face image
 function captureFace() {
     // Adjust canvas dimensions based on device
-    const isMobile = /Mobi|Android/i.test(navigator.userAgent);
     const videoWidth = video.videoWidth;
     const videoHeight = video.videoHeight;
     
@@ -205,12 +224,21 @@ function captureFace() {
             document.getElementById('retryBtn').classList.remove('d-none');
             
             // Enable submit button if location is also captured
-            if (document.getElementById('latitude').value) {
-                document.getElementById('submitBtn').disabled = false;
-            }
+            checkSubmissionReady();
         };
         reader.readAsDataURL(blob);
     }, 'image/jpeg', 0.8);
+}
+
+// Check if both face and location are captured
+function checkSubmissionReady() {
+    const hasLocation = document.getElementById('latitude').value;
+    const hasFace = document.getElementById('faceImageData').value;
+    const allFieldsFilled = ['name', 'matric_no', 'course'].every(
+        field => document.getElementById(field).value.trim()
+    );
+    
+    document.getElementById('submitBtn').disabled = !(hasLocation && hasFace && allFieldsFilled);
 }
 
 // Retry face capture
@@ -242,7 +270,7 @@ async function getLocation() {
             const position = await new Promise((resolve, reject) => {
                 navigator.geolocation.getCurrentPosition(resolve, reject, {
                     enableHighAccuracy: true,
-                    timeout: 15000,  // Increased timeout for mobile devices
+                    timeout: isMobile ? 20000 : 10000,  // Longer timeout for mobile
                     maximumAge: 0
                 });
             });
@@ -257,7 +285,7 @@ async function getLocation() {
             
             locationStatus.innerHTML = `<i class="fas fa-check-circle text-success"></i> Location captured (Accuracy: ${Math.round(acc)} meters)`;
             
-            // Try to get location name
+            // Try to get location name (but don't block submission if this fails)
             try {
                 const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18`);
                 const data = await response.json();
@@ -276,28 +304,42 @@ async function getLocation() {
             }
             
             // Enable submit button if face is also captured
-            if (faceCaptured) {
-                document.getElementById('submitBtn').disabled = false;
-            }
+            checkSubmissionReady();
         } catch (error) {
             console.error('Geolocation error:', error);
             let errorMessage = 'Could not get your location. Please enable location services.';
             
             // More specific error messages for mobile devices
-            if (/Mobi|Android/i.test(navigator.userAgent)) {
+            if (isMobile) {
                 if (error.code === error.PERMISSION_DENIED) {
                     errorMessage = 'Location permission denied. Please enable location services in your device settings.';
                 } else if (error.code === error.TIMEOUT) {
-                    errorMessage = 'Location request timed out. Please ensure you have good network coverage.';
+                    errorMessage = 'Location request timed out. Please ensure you have good network coverage and GPS signal.';
+                } else if (error.code === error.POSITION_UNAVAILABLE) {
+                    errorMessage = 'Location information is unavailable. Please check your GPS or network connection.';
                 }
             }
             
             locationStatus.innerHTML = `<i class="fas fa-exclamation-triangle text-danger"></i> ${errorMessage}`;
-            document.getElementById('submitBtn').disabled = true;
+            
+            // On mobile, allow submission with less accurate location if face is captured
+            if (isMobile && faceCaptured) {
+                locationStatus.innerHTML += `<br><small>You may still submit with face verification only</small>`;
+                checkSubmissionReady();
+            } else {
+                document.getElementById('submitBtn').disabled = true;
+            }
         }
     } else {
         locationStatus.innerHTML = '<i class="fas fa-exclamation-triangle text-danger"></i> Geolocation is not supported by this browser.';
-        document.getElementById('submitBtn').disabled = true;
+        
+        // On mobile, allow submission without location if face is captured
+        if (isMobile && faceCaptured) {
+            locationStatus.innerHTML += '<br><small>You may still submit with face verification only</small>';
+            checkSubmissionReady();
+        } else {
+            document.getElementById('submitBtn').disabled = true;
+        }
     }
 }
 
@@ -311,18 +353,19 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('captureBtn').addEventListener('click', captureFace);
     document.getElementById('retryBtn').addEventListener('click', retryFaceCapture);
     
-    // Add input validation
+    // Add input validation and enable button when all fields are filled
     const formInputs = document.querySelectorAll('#attendanceForm input[required]');
     formInputs.forEach(input => {
         input.addEventListener('input', function() {
             if (this.value.trim()) {
                 this.classList.remove('is-invalid');
             }
+            checkSubmissionReady();
         });
     });
 });
 
-// Form submission
+// Form submission with better mobile handling
 document.getElementById('attendanceForm').addEventListener('submit', async function(e) {
     e.preventDefault();
     
@@ -350,7 +393,8 @@ document.getElementById('attendanceForm').addEventListener('submit', async funct
         return;
     }
     
-    if (!document.getElementById('latitude').value) {
+    // On mobile, we'll allow submission without location (but warn the user)
+    if (!document.getElementById('latitude').value && !isMobile) {
         showFlashMessage('Location is required to submit attendance', 'danger');
         return;
     }
@@ -363,13 +407,16 @@ document.getElementById('attendanceForm').addEventListener('submit', async funct
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
     
+    // For mobile devices, show a more prominent processing message
+    if (isMobile) {
+        showFlashMessage('Please wait while we process your attendance...', 'info');
+    }
+    
     try {
         const formData = new FormData(form);
         
-        // For mobile devices, show a processing message
-        if (/Mobi|Android/i.test(navigator.userAgent)) {
-            showFlashMessage('Processing your attendance submission...', 'info');
-        }
+        // Add a timestamp for mobile devices
+        formData.append('mobile_timestamp', new Date().toISOString());
         
         const response = await fetch(form.action, {
             method: 'POST',
@@ -384,26 +431,29 @@ document.getElementById('attendanceForm').addEventListener('submit', async funct
             const successContent = document.getElementById('successContent');
             
             successContent.innerHTML = `
+                <i class="fas fa-check-circle text-success"></i> 
                 Attendance marked successfully for <strong>${data.record.name}</strong> 
                 (${data.record.matric_no}) in <strong>${data.record.course}</strong>.
-                <br>Location: ${data.record.location_name || data.record.latitude + ', ' + data.record.longitude}
                 <br>Time: ${new Date(data.record.timestamp).toLocaleString()}
+                ${data.record.location_name ? `<br>Location: ${data.record.location_name}` : ''}
             `;
             successMessage.classList.remove('d-none');
             
-            // Reset form
+            // Reset form but keep the face capture if on mobile
             form.reset();
-            retryFaceCapture();
+            if (!isMobile) {
+                retryFaceCapture();
+            }
             
             // Stop video stream
             if (stream) {
                 stream.getTracks().forEach(track => track.stop());
             }
             
-            // Hide success message after 5 seconds
+            // Hide success message after 8 seconds (longer for mobile)
             setTimeout(() => {
                 successMessage.classList.add('d-none');
-            }, 5000);
+            }, isMobile ? 8000 : 5000);
         } else {
             showFlashMessage(data.message || 'Error submitting attendance', 'danger');
         }
@@ -428,18 +478,24 @@ function showFlashMessage(message, category) {
     `;
     flashContainer.prepend(alert);
     
-    // Auto-dismiss after 5 seconds
+    // Auto-dismiss after 5 seconds (longer for mobile)
     setTimeout(() => {
         alert.remove();
-    }, 5000);
+    }, isMobile ? 8000 : 5000);
 }
 
-// Handle page visibility changes (for mobile devices)
+// Handle page visibility changes (important for mobile)
 document.addEventListener('visibilitychange', function() {
     if (document.visibilityState === 'visible') {
-        // If the user returns to the tab, refresh location
+        // If the user returns to the tab, refresh location and camera
         if (!document.getElementById('latitude').value) {
             getLocation();
+        }
+        if (!stream || !stream.active) {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+            startVideo();
         }
     }
 });
@@ -451,6 +507,7 @@ document.addEventListener('visibilitychange', function() {
         border-radius: 5px;
         overflow: hidden;
         background: #000;
+        margin: 0 auto;
     }
     #faceCanvas {
         border: 1px solid #ddd;
@@ -472,7 +529,7 @@ document.addEventListener('visibilitychange', function() {
             padding: 1rem;
         }
         .video-container {
-            margin: 0 auto;
+            max-width: 100%;
         }
         #faceCanvas {
             width: 200px;
@@ -484,6 +541,16 @@ document.addEventListener('visibilitychange', function() {
         .btn {
             width: 100%;
             margin-bottom: 0.5rem;
+        }
+        #submitBtn {
+            font-size: 1.1rem;
+            padding: 0.75rem;
+        }
+        .alert {
+            font-size: 0.95rem;
+        }
+        #successMessage {
+            font-size: 0.9rem;
         }
     }
 </style>
