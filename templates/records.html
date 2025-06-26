@@ -63,6 +63,8 @@
                             <th><i class="fas fa-id-card mr-1"></i> Matric Number</th>
                             <th><i class="fas fa-book mr-1"></i> Course</th>
                             <th><i class="fas fa-calendar-alt mr-1"></i> Date/Time</th>
+                            <th><i class="fas fa-map-marker-alt mr-1"></i> Location</th>
+                            <th><i class="fas fa-user-circle mr-1"></i> Face Verification</th>
                             <th><i class="fas fa-user-shield mr-1"></i> Status</th>
                             <th><i class="fas fa-cog mr-1"></i> Actions</th>
                         </tr>
@@ -78,6 +80,84 @@
                                 <span class="text-dark">
                                     {{ record.timestamp.strftime('%Y-%m-%d %H:%M') }}
                                 </span>
+                            </td>
+                            <td>
+                                {% if record.latitude and record.longitude %}
+                                <div class="dropdown">
+                                    <button class="btn btn-sm btn-outline-primary dropdown-toggle" 
+                                            type="button" 
+                                            id="locationDropdown{{ loop.index }}" 
+                                            data-toggle="dropdown" 
+                                            aria-haspopup="true" 
+                                            aria-expanded="false"
+                                            data-toggle="tooltip" 
+                                            title="Accuracy: {{ record.accuracy|round(2) }} meters">
+                                        <i class="fas fa-map-marked-alt"></i> View Location
+                                    </button>
+                                    <div class="dropdown-menu" aria-labelledby="locationDropdown{{ loop.index }}">
+                                        <h6 class="dropdown-header">Location Details</h6>
+                                        {% if record.location_name %}
+                                        <div class="dropdown-item-text small">{{ record.location_name }}</div>
+                                        {% endif %}
+                                        <div class="dropdown-item-text small">
+                                            Coordinates: {{ record.latitude|round(6) }}, {{ record.longitude|round(6) }}
+                                        </div>
+                                        <div class="dropdown-item-text small">
+                                            Accuracy: {{ record.accuracy|round(2) }} meters
+                                            {% if record.accuracy > 50 %}
+                                            <span class="badge badge-warning ml-2">Low Precision</span>
+                                            {% endif %}
+                                        </div>
+                                        <div class="dropdown-divider"></div>
+                                        <a class="dropdown-item" 
+                                           href="https://maps.google.com/?q={{ record.latitude }},{{ record.longitude }}" 
+                                           target="_blank">
+                                            <i class="fas fa-external-link-alt mr-1"></i> Open in Google Maps
+                                        </a>
+                                        <a class="dropdown-item" 
+                                           href="https://www.openstreetmap.org/?mlat={{ record.latitude }}&mlon={{ record.longitude }}#map=18/{{ record.latitude }}/{{ record.longitude }}" 
+                                           target="_blank">
+                                            <i class="fas fa-external-link-alt mr-1"></i> Open in OpenStreetMap
+                                        </a>
+                                    </div>
+                                </div>
+                                {% else %}
+                                <span class="text-muted">N/A</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if record.face_image %}
+                                <button type="button" class="btn btn-sm btn-outline-info" data-toggle="modal" data-target="#faceModal{{ loop.index }}">
+                                    <i class="fas fa-eye"></i> View Face
+                                </button>
+                                
+                                <!-- Face Image Modal -->
+                                <div class="modal fade" id="faceModal{{ loop.index }}" tabindex="-1" role="dialog" aria-labelledby="faceModalLabel{{ loop.index }}" aria-hidden="true">
+                                    <div class="modal-dialog modal-dialog-centered" role="document">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                <h5 class="modal-title" id="faceModalLabel{{ loop.index }}">Face Verification</h5>
+                                                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                                                    <span aria-hidden="true">&times;</span>
+                                                </button>
+                                            </div>
+                                            <div class="modal-body text-center">
+                                                <img src="data:image/jpeg;base64,{{ record.face_image }}" class="img-fluid rounded" alt="Captured Face">
+                                                <div class="mt-3">
+                                                    <p class="mb-1"><strong>{{ record.name }}</strong></p>
+                                                    <p class="text-muted small mb-0">{{ record.matric_no }}</p>
+                                                    <p class="text-muted small">{{ record.timestamp.strftime('%Y-%m-%d %H:%M') }}</p>
+                                                </div>
+                                            </div>
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% else %}
+                                <span class="text-muted">N/A</span>
+                                {% endif %}
                             </td>
                             <td>
                                 <span class="badge {% if record.active %}badge-success{% else %}badge-danger{% endif %} status-badge" data-status="{{ 'active' if record.active else 'inactive' }}">
@@ -113,31 +193,6 @@
                 </div>
             </div>
             {% endif %}
-        </div>
-    </div>
-</div>
-
-<!-- User Details Modal -->
-<div class="modal fade" id="userDetailsModal" tabindex="-1" role="dialog" aria-labelledby="userDetailsModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg" role="document">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="userDetailsModalLabel">User Details</h5>
-                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                    <span aria-hidden="true">&times;</span>
-                </button>
-            </div>
-            <div class="modal-body" id="userDetailsContent">
-                <!-- Content will be loaded via AJAX -->
-                <div class="text-center py-4">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="sr-only">Loading...</span>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
-            </div>
         </div>
     </div>
 </div>
@@ -424,6 +479,18 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     .table-hover tbody tr:hover {
         background-color: rgba(0, 0, 0, 0.03);
+    }
+    .dropdown-menu {
+        min-width: 250px;
+    }
+    .dropdown-item-text.small {
+        font-size: 0.85rem;
+        padding: 0.25rem 1.5rem;
+    }
+    .modal-body img {
+        max-width: 100%;
+        height: auto;
+        border-radius: 5px;
     }
 </style>
 {% endblock %}

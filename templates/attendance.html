@@ -30,8 +30,13 @@
                 {% endwith %}
             </div>
             
-            <form id="attendanceForm" method="POST" action="{{ url_for('submit_attendance') }}">
+            <form id="attendanceForm" method="POST" action="{{ url_for('submit_attendance') }}" enctype="multipart/form-data">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" id="latitude" name="latitude">
+                <input type="hidden" id="longitude" name="longitude">
+                <input type="hidden" id="accuracy" name="accuracy">
+                <input type="hidden" id="location_name" name="location_name">
+                <input type="hidden" id="faceImageData" name="face_image">
                 
                 <div class="mb-3">
                     <label for="name" class="form-label">Full Name</label>
@@ -45,8 +50,54 @@
                     <label for="course" class="form-label">Course</label>
                     <input type="text" class="form-control" id="course" name="course" required>
                 </div>
+                
+                <!-- Face Verification Section -->
+                <div class="card mb-3">
+                    <div class="card-header bg-info text-white">
+                        <i class="fas fa-user-circle mr-2"></i> Face Verification
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="video-container mb-3">
+                                    <video id="video" width="100%" height="auto" autoplay muted playsinline></video>
+                                </div>
+                                <div class="d-flex justify-content-between">
+                                    <button type="button" id="captureBtn" class="btn btn-primary">
+                                        <i class="fas fa-camera mr-1"></i> Capture Face
+                                    </button>
+                                    <button type="button" id="retryBtn" class="btn btn-warning d-none">
+                                        <i class="fas fa-redo mr-1"></i> Retry
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div id="faceResult" class="text-center">
+                                    <div id="facePreviewContainer" class="mb-3 d-none">
+                                        <h5>Captured Face</h5>
+                                        <canvas id="faceCanvas" width="300" height="300"></canvas>
+                                    </div>
+                                    <div id="faceStatus" class="alert alert-info">
+                                        Please position your face in the camera and click "Capture Face"
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle mr-2"></i> 
+                    Your attendance will be recorded with your current location coordinates and face verification.
+                    <span id="locationStatus">Please enable location services.</span>
+                </div>
+                <div id="locationDetails" class="alert alert-secondary d-none">
+                    <i class="fas fa-map-marker-alt mr-2"></i>
+                    <strong>Location Details:</strong>
+                    <div id="locationInfo"></div>
+                </div>
                 <div class="d-flex justify-content-between">
-                    <button type="submit" class="btn btn-success" id="submitBtn">
+                    <button type="submit" class="btn btn-success" id="submitBtn" disabled>
                         <i class="fas fa-check-circle mr-1"></i> Submit Attendance
                     </button>
                     <div>
@@ -54,8 +105,8 @@
                             <i class="fas fa-home mr-1"></i> Back to Home
                         </a>
                         <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary btn-lg mb-2">
-                        <i class="fas fa-sign-out-alt mr-2"></i>Logout
-                    </a>
+                            <i class="fas fa-sign-out-alt mr-2"></i>Logout
+                        </a>
                         {% if current_user is defined and current_user.is_authenticated and current_user.role == 'admin' %}
                         <a href="{{ url_for('records') }}" class="btn btn-info ml-2">
                             <i class="fas fa-users-cog mr-1"></i> Manage Users
@@ -69,8 +120,178 @@
 </div>
 
 <script>
+// Video stream and canvas elements
+const video = document.getElementById('video');
+const canvas = document.getElementById('faceCanvas');
+const ctx = canvas.getContext('2d');
+let stream = null;
+let faceCaptured = false;
+
+// Start video stream
+async function startVideo() {
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: 640, height: 480, facingMode: "user" },
+            audio: false
+        });
+        video.srcObject = stream;
+        document.getElementById('captureBtn').disabled = false;
+    } catch (err) {
+        console.error("Error accessing camera:", err);
+        showFlashMessage('Camera access denied. Face verification is required.', 'danger');
+        document.getElementById('captureBtn').disabled = true;
+    }
+}
+
+// Capture face image
+function captureFace() {
+    // Draw video frame to canvas
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    // Convert canvas to Blob
+    canvas.toBlob((blob) => {
+        // Convert Blob to base64 string
+        const reader = new FileReader();
+        reader.onload = () => {
+            const base64data = reader.result;
+            document.getElementById('faceImageData').value = base64data;
+            faceCaptured = true;
+            
+            // Update UI
+            document.getElementById('facePreviewContainer').classList.remove('d-none');
+            document.getElementById('faceStatus').innerHTML = '<i class="fas fa-check-circle text-success"></i> Face verified successfully!';
+            document.getElementById('faceStatus').className = 'alert alert-success';
+            document.getElementById('captureBtn').classList.add('d-none');
+            document.getElementById('retryBtn').classList.remove('d-none');
+            
+            // Enable submit button if location is also captured
+            if (document.getElementById('latitude').value) {
+                document.getElementById('submitBtn').disabled = false;
+            }
+        };
+        reader.readAsDataURL(blob);
+    }, 'image/jpeg', 0.8);
+}
+
+// Retry face capture
+function retryFaceCapture() {
+    document.getElementById('facePreviewContainer').classList.add('d-none');
+    document.getElementById('faceStatus').innerHTML = 'Please position your face in the camera and click "Capture Face"';
+    document.getElementById('faceStatus').className = 'alert alert-info';
+    document.getElementById('captureBtn').classList.remove('d-none');
+    document.getElementById('retryBtn').classList.add('d-none');
+    document.getElementById('submitBtn').disabled = true;
+    document.getElementById('faceImageData').value = '';
+    faceCaptured = false;
+}
+
+// Get user's geolocation
+async function getLocation() {
+    const locationStatus = document.getElementById('locationStatus');
+    const latitudeInput = document.getElementById('latitude');
+    const longitudeInput = document.getElementById('longitude');
+    const accuracyInput = document.getElementById('accuracy');
+    const locationNameInput = document.getElementById('location_name');
+    const locationDetails = document.getElementById('locationDetails');
+    const locationInfo = document.getElementById('locationInfo');
+    
+    if (navigator.geolocation) {
+        locationStatus.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Getting location...';
+        
+        try {
+            const position = await new Promise((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(resolve, reject, {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                });
+            });
+
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            const acc = position.coords.accuracy;
+            
+            latitudeInput.value = lat;
+            longitudeInput.value = lng;
+            accuracyInput.value = acc;
+            
+            locationStatus.innerHTML = `<i class="fas fa-check-circle text-success"></i> Location captured (Accuracy: ${Math.round(acc)} meters)`;
+            
+            // Try to get location name
+            try {
+                const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18`);
+                const data = await response.json();
+                
+                if (data.display_name) {
+                    locationNameInput.value = data.display_name;
+                    locationInfo.innerHTML = `
+                        <div>${data.display_name}</div>
+                        <div class="small">Coordinates: ${lat.toFixed(6)}, ${lng.toFixed(6)}</div>
+                        <div class="small">Accuracy: ${Math.round(acc)} meters</div>
+                    `;
+                    locationDetails.classList.remove('d-none');
+                }
+            } catch (error) {
+                console.error('Reverse geocoding error:', error);
+            }
+            
+            // Enable submit button if face is also captured
+            if (faceCaptured) {
+                document.getElementById('submitBtn').disabled = false;
+            }
+        } catch (error) {
+            console.error('Geolocation error:', error);
+            locationStatus.innerHTML = '<i class="fas fa-exclamation-triangle text-danger"></i> Could not get your location. Please enable location services.';
+            document.getElementById('submitBtn').disabled = true;
+        }
+    } else {
+        locationStatus.innerHTML = '<i class="fas fa-exclamation-triangle text-danger"></i> Geolocation is not supported by this browser.';
+        document.getElementById('submitBtn').disabled = true;
+    }
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    startVideo();
+    getLocation();
+    
+    // Set up buttons
+    document.getElementById('captureBtn').addEventListener('click', captureFace);
+    document.getElementById('retryBtn').addEventListener('click', retryFaceCapture);
+});
+
+// Form submission
 document.getElementById('attendanceForm').addEventListener('submit', async function(e) {
     e.preventDefault();
+    
+    // Validate form
+    const requiredFields = ['name', 'matric_no', 'course'];
+    let isValid = true;
+    
+    requiredFields.forEach(field => {
+        const element = document.getElementById(field);
+        if (!element.value.trim()) {
+            element.classList.add('is-invalid');
+            isValid = false;
+        } else {
+            element.classList.remove('is-invalid');
+        }
+    });
+    
+    if (!isValid) {
+        showFlashMessage('Please fill in all required fields', 'danger');
+        return;
+    }
+    
+    if (!document.getElementById('faceImageData').value) {
+        showFlashMessage('Please capture your face for verification', 'danger');
+        return;
+    }
+    
+    if (!document.getElementById('latitude').value) {
+        showFlashMessage('Location is required to submit attendance', 'danger');
+        return;
+    }
     
     const form = e.target;
     const submitBtn = document.getElementById('submitBtn');
@@ -81,13 +302,10 @@ document.getElementById('attendanceForm').addEventListener('submit', async funct
     submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
     
     try {
+        const formData = new FormData(form);
         const response = await fetch(form.action, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'X-Requested-With': 'XMLHttpRequest'
-            },
-            body: new URLSearchParams(new FormData(form))
+            body: formData
         });
         
         const data = await response.json();
@@ -100,29 +318,30 @@ document.getElementById('attendanceForm').addEventListener('submit', async funct
             successContent.innerHTML = `
                 Attendance marked successfully for <strong>${data.record.name}</strong> 
                 (${data.record.matric_no}) in <strong>${data.record.course}</strong>.
+                <br>Location: ${data.record.location_name || data.record.latitude + ', ' + data.record.longitude}
             `;
             successMessage.classList.remove('d-none');
             
-            // Clear form on success
+            // Reset form
             form.reset();
+            retryFaceCapture();
             
-            // Auto-hide success message after 5 seconds
+            // Stop video stream
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+            
+            // Hide success message after 5 seconds
             setTimeout(() => {
-                successMessage.style.transition = 'opacity 0.5s ease';
-                successMessage.style.opacity = '0';
-                setTimeout(() => {
-                    successMessage.classList.add('d-none');
-                    successMessage.style.opacity = '';
-                }, 500);
+                successMessage.classList.add('d-none');
             }, 5000);
         } else {
-            showFlashMessage(data.message, 'danger');
+            showFlashMessage(data.message || 'Error submitting attendance', 'danger');
         }
     } catch (error) {
         console.error('Error:', error);
         showFlashMessage('Network error - please try again', 'danger');
     } finally {
-        // Reset button state
         submitBtn.disabled = false;
         submitBtn.innerHTML = originalBtnText;
     }
@@ -142,21 +361,30 @@ function showFlashMessage(message, category) {
     
     // Auto-dismiss after 5 seconds
     setTimeout(() => {
-        alert.style.transition = 'opacity 0.5s ease';
-        alert.style.opacity = '0';
-        setTimeout(() => alert.remove(), 500);
+        alert.remove();
     }, 5000);
 }
-
-// Check if user is inactive and prevent form submission
-document.addEventListener('DOMContentLoaded', function() {
-    // This would be set by your Flask backend if the user is inactive
-    {% if current_user is defined and current_user.is_authenticated and not current_user.active %}
-        document.getElementById('attendanceForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            showFlashMessage('Your account is inactive. Please contact an administrator.', 'danger');
-        });
-    {% endif %}
-});
 </script>
+
+<style>
+    .video-container {
+        border: 2px solid #ddd;
+        border-radius: 5px;
+        overflow: hidden;
+        background: #000;
+    }
+    #faceCanvas {
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        max-width: 100%;
+        height: auto;
+    }
+    #facePreviewContainer {
+        margin: 0 auto;
+        text-align: center;
+    }
+    .is-invalid {
+        border-color: #dc3545;
+    }
+</style>
 {% endblock %}
