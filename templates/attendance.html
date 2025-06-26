@@ -41,17 +41,14 @@
                 <div class="mb-3">
                     <label for="name" class="form-label">Full Name</label>
                     <input type="text" class="form-control" id="name" name="name" required>
-                    <div class="invalid-feedback">Please provide your full name.</div>
                 </div>
                 <div class="mb-3">
                     <label for="matric_no" class="form-label">Matric Number</label>
                     <input type="text" class="form-control" id="matric_no" name="matric_no" required>
-                    <div class="invalid-feedback">Please provide your matric number.</div>
                 </div>
                 <div class="mb-3">
                     <label for="course" class="form-label">Course</label>
                     <input type="text" class="form-control" id="course" name="course" required>
-                    <div class="invalid-feedback">Please provide the course name.</div>
                 </div>
                 
                 <!-- Face Verification Section -->
@@ -99,22 +96,22 @@
                     <strong>Location Details:</strong>
                     <div id="locationInfo"></div>
                 </div>
-                <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center">
-                    <button type="submit" class="btn btn-success mb-2 mb-md-0" id="submitBtn" disabled>
+                <div class="d-flex justify-content-between">
+                    <button type="submit" class="btn btn-success" id="submitBtn" disabled>
                         <i class="fas fa-check-circle mr-1"></i> Submit Attendance
                     </button>
-                    <div class="d-flex flex-column flex-md-row">
-                        <a href="{{ url_for('index') }}" class="btn btn-primary mb-2 mb-md-0 mr-md-2">
+                    <div>
+                        <a href="{{ url_for('index') }}" class="btn btn-primary">
                             <i class="fas fa-home mr-1"></i> Back to Home
                         </a>
+                        <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary btn-lg mb-2">
+                            <i class="fas fa-sign-out-alt mr-2"></i>Logout
+                        </a>
                         {% if current_user is defined and current_user.is_authenticated and current_user.role == 'admin' %}
-                        <a href="{{ url_for('records') }}" class="btn btn-info mb-2 mb-md-0 mr-md-2">
+                        <a href="{{ url_for('records') }}" class="btn btn-info ml-2">
                             <i class="fas fa-users-cog mr-1"></i> Manage Users
                         </a>
                         {% endif %}
-                        <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary">
-                            <i class="fas fa-sign-out-alt mr-1"></i> Logout
-                        </a>
                     </div>
                 </div>
             </form>
@@ -133,29 +130,12 @@ let faceCaptured = false;
 // Start video stream
 async function startVideo() {
     try {
-        const constraints = {
-            video: {
-                width: { ideal: 640 },
-                height: { ideal: 480 },
-                facingMode: "user"
-            },
+        stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: 640, height: 480, facingMode: "user" },
             audio: false
-        };
-        
-        // Adjust constraints for mobile devices
-        if (/Mobi|Android/i.test(navigator.userAgent)) {
-            constraints.video.facingMode = { exact: "user" };
-        }
-        
-        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        });
         video.srcObject = stream;
         document.getElementById('captureBtn').disabled = false;
-        
-        // Handle mobile device orientation changes
-        if (screen.orientation) {
-            screen.orientation.addEventListener('change', handleOrientationChange);
-        }
-        
     } catch (err) {
         console.error("Error accessing camera:", err);
         showFlashMessage('Camera access denied. Face verification is required.', 'danger');
@@ -163,28 +143,8 @@ async function startVideo() {
     }
 }
 
-// Handle device orientation changes
-function handleOrientationChange() {
-    // On mobile devices, restart the video stream when orientation changes
-    if (/Mobi|Android/i.test(navigator.userAgent)) {
-        if (stream) {
-            stream.getTracks().forEach(track => track.stop());
-        }
-        startVideo();
-    }
-}
-
 // Capture face image
 function captureFace() {
-    // Adjust canvas dimensions based on device
-    const isMobile = /Mobi|Android/i.test(navigator.userAgent);
-    const videoWidth = video.videoWidth;
-    const videoHeight = video.videoHeight;
-    
-    // Set canvas dimensions to match video aspect ratio
-    canvas.width = isMobile ? Math.min(300, videoWidth) : 300;
-    canvas.height = (canvas.width * videoHeight) / videoWidth;
-    
     // Draw video frame to canvas
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     
@@ -242,7 +202,7 @@ async function getLocation() {
             const position = await new Promise((resolve, reject) => {
                 navigator.geolocation.getCurrentPosition(resolve, reject, {
                     enableHighAccuracy: true,
-                    timeout: 15000,  // Increased timeout for mobile devices
+                    timeout: 10000,
                     maximumAge: 0
                 });
             });
@@ -281,18 +241,7 @@ async function getLocation() {
             }
         } catch (error) {
             console.error('Geolocation error:', error);
-            let errorMessage = 'Could not get your location. Please enable location services.';
-            
-            // More specific error messages for mobile devices
-            if (/Mobi|Android/i.test(navigator.userAgent)) {
-                if (error.code === error.PERMISSION_DENIED) {
-                    errorMessage = 'Location permission denied. Please enable location services in your device settings.';
-                } else if (error.code === error.TIMEOUT) {
-                    errorMessage = 'Location request timed out. Please ensure you have good network coverage.';
-                }
-            }
-            
-            locationStatus.innerHTML = `<i class="fas fa-exclamation-triangle text-danger"></i> ${errorMessage}`;
+            locationStatus.innerHTML = '<i class="fas fa-exclamation-triangle text-danger"></i> Could not get your location. Please enable location services.';
             document.getElementById('submitBtn').disabled = true;
         }
     } else {
@@ -303,23 +252,12 @@ async function getLocation() {
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
-    // Start camera and location services
     startVideo();
     getLocation();
     
     // Set up buttons
     document.getElementById('captureBtn').addEventListener('click', captureFace);
     document.getElementById('retryBtn').addEventListener('click', retryFaceCapture);
-    
-    // Add input validation
-    const formInputs = document.querySelectorAll('#attendanceForm input[required]');
-    formInputs.forEach(input => {
-        input.addEventListener('input', function() {
-            if (this.value.trim()) {
-                this.classList.remove('is-invalid');
-            }
-        });
-    });
 });
 
 // Form submission
@@ -365,12 +303,6 @@ document.getElementById('attendanceForm').addEventListener('submit', async funct
     
     try {
         const formData = new FormData(form);
-        
-        // For mobile devices, show a processing message
-        if (/Mobi|Android/i.test(navigator.userAgent)) {
-            showFlashMessage('Processing your attendance submission...', 'info');
-        }
-        
         const response = await fetch(form.action, {
             method: 'POST',
             body: formData
@@ -387,7 +319,6 @@ document.getElementById('attendanceForm').addEventListener('submit', async funct
                 Attendance marked successfully for <strong>${data.record.name}</strong> 
                 (${data.record.matric_no}) in <strong>${data.record.course}</strong>.
                 <br>Location: ${data.record.location_name || data.record.latitude + ', ' + data.record.longitude}
-                <br>Time: ${new Date(data.record.timestamp).toLocaleString()}
             `;
             successMessage.classList.remove('d-none');
             
@@ -433,16 +364,6 @@ function showFlashMessage(message, category) {
         alert.remove();
     }, 5000);
 }
-
-// Handle page visibility changes (for mobile devices)
-document.addEventListener('visibilitychange', function() {
-    if (document.visibilityState === 'visible') {
-        // If the user returns to the tab, refresh location
-        if (!document.getElementById('latitude').value) {
-            getLocation();
-        }
-    }
-});
 </script>
 
 <style>
@@ -464,27 +385,6 @@ document.addEventListener('visibilitychange', function() {
     }
     .is-invalid {
         border-color: #dc3545;
-    }
-    
-    /* Mobile-specific styles */
-    @media (max-width: 768px) {
-        .card-body {
-            padding: 1rem;
-        }
-        .video-container {
-            margin: 0 auto;
-        }
-        #faceCanvas {
-            width: 200px;
-            height: 200px;
-        }
-        .d-flex.justify-content-between {
-            flex-direction: column;
-        }
-        .btn {
-            width: 100%;
-            margin-bottom: 0.5rem;
-        }
     }
 </style>
 {% endblock %}
