@@ -35,8 +35,11 @@
                 <input type="hidden" id="latitude" name="latitude">
                 <input type="hidden" id="longitude" name="longitude">
                 <input type="hidden" id="accuracy" name="accuracy">
+<<<<<<< HEAD
                 <input type="hidden" id="location_name" name="location_name">
                 <input type="hidden" id="faceImageData" name="face_image">
+=======
+>>>>>>> 7fec402e2817f7fe588ed7b6b0cc62f8113b6afb
                 
                 <div class="mb-3">
                     <label for="name" class="form-label">Full Name</label>
@@ -50,6 +53,7 @@
                     <label for="course" class="form-label">Course</label>
                     <input type="text" class="form-control" id="course" name="course" required>
                 </div>
+<<<<<<< HEAD
                 
                 <!-- Face Verification Section -->
                 <div class="card mb-3">
@@ -96,6 +100,13 @@
                     <strong>Location Details:</strong>
                     <div id="locationInfo"></div>
                 </div>
+=======
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle mr-2"></i> 
+                    Your attendance will be recorded with your current location coordinates.
+                    <span id="locationStatus">Please enable location services.</span>
+                </div>
+>>>>>>> 7fec402e2817f7fe588ed7b6b0cc62f8113b6afb
                 <div class="d-flex justify-content-between">
                     <button type="submit" class="btn btn-success" id="submitBtn" disabled>
                         <i class="fas fa-check-circle mr-1"></i> Submit Attendance
@@ -120,6 +131,7 @@
 </div>
 
 <script>
+<<<<<<< HEAD
 // Video stream and canvas elements
 const video = document.getElementById('video');
 const canvas = document.getElementById('faceCanvas');
@@ -187,17 +199,25 @@ function retryFaceCapture() {
 
 // Get user's geolocation
 async function getLocation() {
+=======
+// Get user's geolocation
+function getLocation() {
+>>>>>>> 7fec402e2817f7fe588ed7b6b0cc62f8113b6afb
     const locationStatus = document.getElementById('locationStatus');
     const latitudeInput = document.getElementById('latitude');
     const longitudeInput = document.getElementById('longitude');
     const accuracyInput = document.getElementById('accuracy');
+<<<<<<< HEAD
     const locationNameInput = document.getElementById('location_name');
     const locationDetails = document.getElementById('locationDetails');
     const locationInfo = document.getElementById('locationInfo');
+=======
+>>>>>>> 7fec402e2817f7fe588ed7b6b0cc62f8113b6afb
     
     if (navigator.geolocation) {
         locationStatus.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Getting location...';
         
+<<<<<<< HEAD
         try {
             const position = await new Promise((resolve, reject) => {
                 navigator.geolocation.getCurrentPosition(resolve, reject, {
@@ -244,12 +264,54 @@ async function getLocation() {
             locationStatus.innerHTML = '<i class="fas fa-exclamation-triangle text-danger"></i> Could not get your location. Please enable location services.';
             document.getElementById('submitBtn').disabled = true;
         }
+=======
+        navigator.geolocation.getCurrentPosition(
+            function(position) {
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+                const acc = position.coords.accuracy;
+                
+                latitudeInput.value = lat;
+                longitudeInput.value = lng;
+                accuracyInput.value = acc;
+                
+                locationStatus.innerHTML = `<i class="fas fa-check-circle text-success"></i> Location captured (Accuracy: ${Math.round(acc)} meters)`;
+            },
+            function(error) {
+                let errorMessage = "Location access denied. Attendance submission requires location.";
+                switch(error.code) {
+                    case error.PERMISSION_DENIED:
+                        errorMessage = "Location access denied. Please enable location services to submit attendance.";
+                        break;
+                    case error.POSITION_UNAVAILABLE:
+                        errorMessage = "Location information unavailable.";
+                        break;
+                    case error.TIMEOUT:
+                        errorMessage = "Location request timed out. Please try again.";
+                        break;
+                    case error.UNKNOWN_ERROR:
+                        errorMessage = "An unknown error occurred while getting location.";
+                        break;
+                }
+                locationStatus.innerHTML = `<i class="fas fa-exclamation-triangle text-danger"></i> ${errorMessage}`;
+                
+                // Disable submit button if location not available
+                document.getElementById('submitBtn').disabled = true;
+            },
+            {
+                enableHighAccuracy: true,
+                timeout: 10000,
+                maximumAge: 0
+            }
+        );
+>>>>>>> 7fec402e2817f7fe588ed7b6b0cc62f8113b6afb
     } else {
         locationStatus.innerHTML = '<i class="fas fa-exclamation-triangle text-danger"></i> Geolocation is not supported by this browser.';
         document.getElementById('submitBtn').disabled = true;
     }
 }
 
+<<<<<<< HEAD
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
     startVideo();
@@ -290,6 +352,27 @@ document.getElementById('attendanceForm').addEventListener('submit', async funct
     
     if (!document.getElementById('latitude').value) {
         showFlashMessage('Location is required to submit attendance', 'danger');
+=======
+document.addEventListener('DOMContentLoaded', function() {
+    // Get location when page loads
+    getLocation();
+    
+    // Check if user is inactive and prevent form submission
+    {% if current_user is defined and current_user.is_authenticated and not current_user.active %}
+        document.getElementById('attendanceForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            showFlashMessage('Your account is inactive. Please contact an administrator.', 'danger');
+        });
+    {% endif %}
+});
+
+document.getElementById('attendanceForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    // Check if location is available
+    if (!document.getElementById('latitude').value || !document.getElementById('longitude').value) {
+        showFlashMessage('Location is required to submit attendance. Please enable location services.', 'danger');
+>>>>>>> 7fec402e2817f7fe588ed7b6b0cc62f8113b6afb
         return;
     }
     
@@ -318,6 +401,7 @@ document.getElementById('attendanceForm').addEventListener('submit', async funct
             successContent.innerHTML = `
                 Attendance marked successfully for <strong>${data.record.name}</strong> 
                 (${data.record.matric_no}) in <strong>${data.record.course}</strong>.
+<<<<<<< HEAD
                 <br>Location: ${data.record.location_name || data.record.latitude + ', ' + data.record.longitude}
             `;
             successMessage.classList.remove('d-none');
@@ -325,6 +409,16 @@ document.getElementById('attendanceForm').addEventListener('submit', async funct
             // Reset form
             form.reset();
             retryFaceCapture();
+=======
+                <br>Location: ${data.record.latitude}, ${data.record.longitude} (Accuracy: ${Math.round(data.record.accuracy)}m)
+            `;
+            successMessage.classList.remove('d-none');
+            
+            // Clear form on success (except location)
+            document.getElementById('name').value = '';
+            document.getElementById('matric_no').value = '';
+            document.getElementById('course').value = '';
+>>>>>>> 7fec402e2817f7fe588ed7b6b0cc62f8113b6afb
             
             // Stop video stream
             if (stream) {
@@ -365,6 +459,7 @@ function showFlashMessage(message, category) {
     }, 5000);
 }
 </script>
+<<<<<<< HEAD
 
 <style>
     .video-container {
@@ -388,3 +483,6 @@ function showFlashMessage(message, category) {
     }
 </style>
 {% endblock %}
+=======
+{% endblock %}
+>>>>>>> 7fec402e2817f7fe588ed7b6b0cc62f8113b6afb
