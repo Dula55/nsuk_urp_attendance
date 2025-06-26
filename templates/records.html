@@ -11,11 +11,11 @@
             <div class="d-flex justify-content-between align-items-center">
                 <h3 class="mb-0"><i class="fas fa-clipboard-list mr-2"></i>Student Attendance Records</h3>
                 <div>
-                    <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary btn-lg mb-2">
-                        <i class="fas fa-sign-out-alt mr-2"></i>Logout
+                    <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary">
+                        <i class="fas fa-sign-out-alt mr-1"></i> Logout
                     </a>
-                    <a href="{{ url_for('index') }}" class="btn btn-light btn-sm">
-                        <i class="fas fa-home mr-1"></i> Back to Home
+                    <a href="{{ url_for('index') }}" class="btn btn-light btn-sm ml-2">
+                        <i class="fas fa-home mr-1"></i> Home
                     </a>
                 </div>
             </div>
@@ -39,10 +39,10 @@
             <div class="d-flex justify-content-between mb-4">
                 <div class="export-buttons">
                     <a href="{{ url_for('download_all_csv') }}" class="btn btn-outline-success" id="exportCsvBtn">
-                        <i class="fas fa-file-csv mr-2"></i> Export as CSV
+                        <i class="fas fa-file-csv mr-1"></i> CSV
                     </a>
                     <a href="{{ url_for('download_all_pdf') }}" class="btn btn-outline-danger ml-2" id="exportPdfBtn">
-                        <i class="fas fa-file-pdf mr-2"></i> Export as PDF
+                        <i class="fas fa-file-pdf mr-1"></i> PDF
                     </a>
                 </div>
                 <div class="record-count">
@@ -69,7 +69,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        {% for record in records %}
+                        {% for record, location_data in records_with_location %}
                         <tr>
                             <td>{{ loop.index }}</td>
                             <td>{{ record.name }}</td>
@@ -81,44 +81,22 @@
                                 </span>
                             </td>
                             <td>
-                                {% if record.latitude and record.longitude %}
-                                <div class="dropdown">
-                                    <button class="btn btn-sm btn-outline-primary dropdown-toggle" 
-                                            type="button" 
-                                            id="locationDropdown{{ loop.index }}" 
-                                            data-toggle="dropdown" 
-                                            aria-haspopup="true" 
-                                            aria-expanded="false"
-                                            data-toggle="tooltip" 
-                                            title="Accuracy: {{ record.accuracy|round(2) }} meters">
-                                        <i class="fas fa-map-marked-alt"></i> View Location
-                                    </button>
-                                    <div class="dropdown-menu" aria-labelledby="locationDropdown{{ loop.index }}">
-                                        <h6 class="dropdown-header">Location Details</h6>
-                                        {% if record.location_name %}
-                                        <div class="dropdown-item-text small">{{ record.location_name }}</div>
-                                        {% endif %}
-                                        <div class="dropdown-item-text small">
-                                            Coordinates: {{ record.latitude|round(6) }}, {{ record.longitude|round(6) }}
-                                        </div>
-                                        <div class="dropdown-item-text small">
-                                            Accuracy: {{ record.accuracy|round(2) }} meters
-                                        </div>
-                                        <div class="dropdown-divider"></div>
-                                        <a class="dropdown-item" 
-                                           href="https://maps.google.com/?q={{ record.latitude }},{{ record.longitude }}" 
-                                           target="_blank">
-                                            <i class="fas fa-external-link-alt mr-1"></i> Open in Google Maps
-                                        </a>
-                                        <a class="dropdown-item" 
-                                           href="https://www.openstreetmap.org/?mlat={{ record.latitude }}&mlon={{ record.longitude }}#map=18/{{ record.latitude }}/{{ record.longitude }}" 
-                                           target="_blank">
-                                            <i class="fas fa-external-link-alt mr-1"></i> Open in OpenStreetMap
-                                        </a>
-                                    </div>
-                                </div>
+                                {% if location_data.location_name %}
+                                    {{ location_data.location_name }}
+                                {% elif location_data.latitude and location_data.longitude %}
+                                    {{ "%.6f, %.6f"|format(location_data.latitude, location_data.longitude) }}
                                 {% else %}
-                                <span class="text-muted">N/A</span>
+                                    <span class="text-muted">N/A</span>
+                                {% endif %}
+                                
+                                {% if location_data.latitude and location_data.longitude %}
+                                <a href="https://www.google.com/maps?q={{ location_data.latitude }},{{ location_data.longitude }}" 
+                                   target="_blank" 
+                                   class="btn btn-sm btn-link p-0 ml-1"
+                                   data-toggle="tooltip" 
+                                   title="View on map">
+                                    <i class="fas fa-external-link-alt"></i>
+                                </a>
                                 {% endif %}
                             </td>
                             <td>
@@ -159,31 +137,6 @@
     </div>
 </div>
 
-<!-- User Details Modal -->
-<div class="modal fade" id="userDetailsModal" tabindex="-1" role="dialog" aria-labelledby="userDetailsModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg" role="document">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="userDetailsModalLabel">User Details</h5>
-                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                    <span aria-hidden="true">&times;</span>
-                </button>
-            </div>
-            <div class="modal-body" id="userDetailsContent">
-                <!-- Content will be loaded via AJAX -->
-                <div class="text-center py-4">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="sr-only">Loading...</span>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
-            </div>
-        </div>
-    </div>
-</div>
-
 <!-- Toast Container -->
 <div id="toastContainer" class="position-fixed bottom-0 end-0 p-3" style="z-index: 11"></div>
 
@@ -201,7 +154,7 @@ function setupExportButtons() {
             } else {
                 // Show loading state
                 const originalText = exportCsvBtn.innerHTML;
-                exportCsvBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Generating CSV...';
+                exportCsvBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Generating...';
                 exportCsvBtn.disabled = true;
                 
                 // Re-enable after a short delay
@@ -221,7 +174,7 @@ function setupExportButtons() {
             } else {
                 // Show loading state
                 const originalText = exportPdfBtn.innerHTML;
-                exportPdfBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Generating PDF...';
+                exportPdfBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Generating...';
                 exportPdfBtn.disabled = true;
                 
                 // Re-enable after a short delay
@@ -244,7 +197,7 @@ async function handleStatusToggle(button) {
     
     // Show loading state
     button.disabled = true;
-    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
     
     try {
         const response = await fetch(`/toggle_status/${studentId}`, {
@@ -253,11 +206,12 @@ async function handleStatusToggle(button) {
                 'Content-Type': 'application/json',
                 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content,
                 'X-Requested-With': 'XMLHttpRequest'
-            },
-            body: JSON.stringify({
-                new_status: newStatus
-            })
+            }
         });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
         
         const data = await response.json();
         
@@ -293,9 +247,9 @@ async function handleStatusToggle(button) {
                 Inactive: ${data.new_counts.inactive}
             `;
             
-            showToast(data.message, 'success');
+            showToast('Status updated successfully', 'success');
         } else {
-            showToast(data.message, 'error');
+            showToast(data.message || 'Status update failed', 'error');
         }
     } catch (error) {
         console.error('Error:', error);
@@ -318,7 +272,7 @@ async function handleDeleteRecord(button) {
     
     // Show loading state
     button.disabled = true;
-    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Deleting...';
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
     
     try {
         const response = await fetch(`/delete_record/${recordId}`, {
@@ -329,6 +283,10 @@ async function handleDeleteRecord(button) {
                 'X-Requested-With': 'XMLHttpRequest'
             }
         });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
         
         const data = await response.json();
         
@@ -347,9 +305,9 @@ async function handleDeleteRecord(button) {
                 Inactive: ${data.new_counts.inactive}
             `;
             
-            showToast(data.message, 'success');
+            showToast('Record deleted successfully', 'success');
         } else {
-            showToast(data.message, 'error');
+            showToast(data.message || 'Deletion failed', 'error');
         }
     } catch (error) {
         console.error('Error:', error);
@@ -403,18 +361,6 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Initialize tooltips
     $('[data-toggle="tooltip"]').tooltip();
-    
-    // Add student-id data attributes to attendance records rows
-    const recordsTable = document.querySelector('.table.table-hover.table-striped tbody');
-    if (recordsTable) {
-        const rows = recordsTable.querySelectorAll('tr');
-        rows.forEach(row => {
-            const matricNo = row.querySelector('td:nth-child(3)').textContent.trim();
-            if (matricNo) {
-                row.setAttribute('data-student-id', matricNo);
-            }
-        });
-    }
 });
 </script>
 
@@ -450,29 +396,10 @@ document.addEventListener('DOMContentLoaded', function() {
         opacity: 0.7;
     }
     .export-buttons .btn {
-        min-width: 150px;
+        min-width: 120px;
     }
-    .avatar-placeholder {
-        width: 120px;
-        height: 120px;
-        font-size: 48px;
-        margin: 0 auto;
-    }
-    .table-sm td, .table-sm th {
-        padding: 0.3rem;
-    }
-    .card-header h4 {
-        margin-bottom: 0;
-    }
-    .table-hover tbody tr:hover {
-        background-color: rgba(0, 0, 0, 0.03);
-    }
-    .dropdown-menu {
-        min-width: 250px;
-    }
-    .dropdown-item-text.small {
-        font-size: 0.85rem;
-        padding: 0.25rem 1.5rem;
+    .toast {
+        opacity: 1 !important;
     }
 </style>
 {% endblock %}

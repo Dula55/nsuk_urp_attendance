@@ -67,14 +67,9 @@
                         <a href="{{ url_for('index') }}" class="btn btn-primary">
                             <i class="fas fa-home mr-1"></i> Back to Home
                         </a>
-                        <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary btn-lg mb-2">
-                        <i class="fas fa-sign-out-alt mr-2"></i>Logout
-                    </a>
-                        {% if current_user is defined and current_user.is_authenticated and current_user.role == 'admin' %}
-                        <a href="{{ url_for('records') }}" class="btn btn-info ml-2">
-                            <i class="fas fa-users-cog mr-1"></i> Manage Users
+                        <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary">
+                            <i class="fas fa-sign-out-alt mr-1"></i> Logout
                         </a>
-                        {% endif %}
                     </div>
                 </div>
             </form>
@@ -92,6 +87,7 @@ function getLocation() {
     const locationNameInput = document.getElementById('location_name');
     const locationDetails = document.getElementById('locationDetails');
     const locationInfo = document.getElementById('locationInfo');
+    const submitBtn = document.getElementById('submitBtn');
     
     if (navigator.geolocation) {
         locationStatus.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Getting location...';
@@ -107,10 +103,13 @@ function getLocation() {
                 accuracyInput.value = acc;
                 
                 locationStatus.innerHTML = `<i class="fas fa-check-circle text-success"></i> Location captured (Accuracy: ${Math.round(acc)} meters)`;
+                submitBtn.disabled = false;
                 
                 // Get location name using reverse geocoding
                 try {
                     const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
+                    if (!response.ok) throw new Error('Reverse geocoding failed');
+                    
                     const data = await response.json();
                     
                     let locationName = '';
@@ -160,9 +159,7 @@ function getLocation() {
                         break;
                 }
                 locationStatus.innerHTML = `<i class="fas fa-exclamation-triangle text-danger"></i> ${errorMessage}`;
-                
-                // Disable submit button if location not available
-                document.getElementById('submitBtn').disabled = true;
+                submitBtn.disabled = true;
             },
             {
                 enableHighAccuracy: true,
@@ -172,7 +169,7 @@ function getLocation() {
         );
     } else {
         locationStatus.innerHTML = '<i class="fas fa-exclamation-triangle text-danger"></i> Geolocation is not supported by this browser.';
-        document.getElementById('submitBtn').disabled = true;
+        submitBtn.disabled = true;
     }
 }
 
@@ -207,14 +204,19 @@ document.getElementById('attendanceForm').addEventListener('submit', async funct
     submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
     
     try {
+        const formData = new FormData(form);
         const response = await fetch(form.action, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'X-Requested-With': 'XMLHttpRequest'
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
             },
-            body: new URLSearchParams(new FormData(form))
+            body: new URLSearchParams(formData)
         });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
         
         const data = await response.json();
         
@@ -246,7 +248,7 @@ document.getElementById('attendanceForm').addEventListener('submit', async funct
                 }, 500);
             }, 5000);
         } else {
-            showFlashMessage(data.message, 'danger');
+            showFlashMessage(data.message || 'Submission failed', 'danger');
         }
     } catch (error) {
         console.error('Error:', error);

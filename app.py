@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, Response, send_file
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, Response, send_file, current_app
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from datetime import datetime, timezone
@@ -62,15 +62,14 @@ class User(UserMixin, db.Model):
     role = db.Column(db.String(20), nullable=False)
     active = db.Column(db.Boolean, default=True)  # THIS MUST EXIST
 
-@property
-def is_active(self):
-    return self.active  # or whatever your active status field is called
+    @property
+    def is_active(self):
+        return self.active
+
 # User loader function required by Flask-Login
-
-
 @login_manager.user_loader
 def load_user(user_id):
-    user = User.query.get(user_id)
+    user = User.query.get(int(user_id))
     if user and user.active:  # Use your existing active attribute
         return user
     return None
@@ -85,7 +84,6 @@ class Student(db.Model):
     
     def __repr__(self):
         return f'<Student {self.matric_no}>'
-    
 
 class StudentRecord(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -94,6 +92,10 @@ class StudentRecord(db.Model):
     course = db.Column(db.String(50), nullable=False)
     timestamp = db.Column(db.DateTime, nullable=False, default=datetime.now)
     active = db.Column(db.Boolean, default=True)
+    latitude = db.Column(db.Float)
+    longitude = db.Column(db.Float)
+    accuracy = db.Column(db.Float)
+    location_name = db.Column(db.String(200))
 
     def __repr__(self):
         return f'<StudentRecord {self.matric_no}>'
@@ -106,7 +108,11 @@ class Attendance(db.Model):
     name = db.Column(db.String(100), nullable=False)
     matric_no = db.Column(db.String(50), nullable=False)
     course = db.Column(db.String(100), nullable=False)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = db.Column(DateTime, default=datetime.utcnow)
+    latitude = db.Column(db.Float)
+    longitude = db.Column(db.Float)
+    accuracy = db.Column(db.Float)
+    location_name = db.Column(db.String(200))
 
     def __repr__(self):
         return f"<Attendance {self.matric_no}>"
@@ -121,7 +127,6 @@ class LoginForm(FlaskForm):
     username = StringField('Username', validators=[DataRequired()])
     password = PasswordField('Password', validators=[DataRequired()])
     submit = SubmitField('Login')
-
 
 class RegistrationForm(FlaskForm):
     username = StringField('Username', validators=[DataRequired()])
@@ -139,16 +144,15 @@ def register():
     lecturer_exists = User.query.filter_by(role='lecturer').first() is not None
     form = RegistrationForm()
     if form.validate_on_submit():
-        # Always use .get() to avoid KeyError
         role = request.form.get('role')
-        username = request.form.get('username')  # You were missing this line
-        password = request.form.get('password')  # You were missing this line
+        username = request.form.get('username')
+        password = request.form.get('password')
         
         if not role:
             flash('Role is required', 'danger')
             return redirect(url_for('register'))
         
-        if not username or not password:  # Added validation for username and password
+        if not username or not password:
             flash('Username and password are required', 'danger')
             return redirect(url_for('register'))
         
@@ -161,13 +165,15 @@ def register():
         new_user = User(username=username, password=hashed_password, role=role)
         
         db.session.add(new_user)
-        db.session.commit()
-        
-        flash('Registration successful! Please login.', 'success')
-        return redirect(url_for('login'))
+        try:
+            db.session.commit()
+            flash('Registration successful! Please login.', 'success')
+            return redirect(url_for('login'))
+        except IntegrityError:
+            db.session.rollback()
+            flash('Registration failed. Please try again.', 'danger')
     
     return render_template('register.html', form=form, lecturer_exists=lecturer_exists)
-    
     
 # Login Route
 @app.route('/login', methods=['GET', 'POST'])
@@ -210,24 +216,13 @@ def attendance():
         return redirect(url_for('login'))
     
     form = AttendanceForm()
-    
-    if form.validate_on_submit():
-        name = form.name.data
-        matric_no = form.matric_no.data
-        course = form.course.data
-        
-        new_record = Attendance(name=name, matric_no=matric_no, course=course)
-        db.session.add(new_record)
-        db.session.commit()
-        
-        return render_template('success.html', record=new_record)
-    
     return render_template('attendance.html', form=form)
 
 @app.route('/submit_attendance', methods=['POST'])
 @login_required
 def submit_attendance():
     try:
+        # Required fields
         name = request.form.get('name')
         matric_no = request.form.get('matric_no')
         course = request.form.get('course')
@@ -236,11 +231,34 @@ def submit_attendance():
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify({
                     'success': False,
-                    'message': 'All fields are required!'
+                    'message': 'Name, Matric Number and Course are required!'
                 }), 400
-            flash('All fields are required!', 'danger')
+            flash('Name, Matric Number and Course are required!', 'danger')
             return redirect(url_for('attendance'))
-        
+
+        # Location fields
+        latitude = request.form.get('latitude')
+        longitude = request.form.get('longitude')
+        accuracy = request.form.get('accuracy', 0, type=float)
+        location_name = request.form.get('location_name', '')
+
+        # Validate coordinates if provided
+        if latitude and longitude:
+            try:
+                latitude = float(latitude)
+                longitude = float(longitude)
+                if not (-90 <= latitude <= 90) or not (-180 <= longitude <= 180):
+                    raise ValueError("Invalid coordinate range")
+            except (ValueError, TypeError):
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return jsonify({
+                        'success': False,
+                        'message': 'Invalid latitude/longitude values'
+                    }), 400
+                flash('Invalid location coordinates', 'danger')
+                return redirect(url_for('attendance'))
+
+        # Check for existing record
         existing = StudentRecord.query.filter_by(matric_no=matric_no).first()
         if existing:
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -250,34 +268,45 @@ def submit_attendance():
                 }), 400
             flash('This matric number already exists!', 'warning')
             return redirect(url_for('attendance'))
-        
+
+        # Create new record
         new_record = StudentRecord(
             name=name,
             matric_no=matric_no,
             course=course,
             timestamp=datetime.now(),
+            latitude=latitude if latitude else None,
+            longitude=longitude if longitude else None,
+            accuracy=accuracy,
+            location_name=location_name,
             active=True
         )
-        
+
         db.session.add(new_record)
         db.session.commit()
-        
+
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
             return jsonify({
                 'success': True,
                 'message': 'Attendance submitted successfully!',
                 'record': {
+                    'id': new_record.id,
                     'name': name,
                     'matric_no': matric_no,
-                    'course': course
+                    'course': course,
+                    'latitude': latitude,
+                    'longitude': longitude,
+                    'accuracy': accuracy,
+                    'location_name': location_name
                 }
             })
-        
+
         flash('Attendance submitted successfully!', 'success')
         return redirect(url_for('attendance'))
-        
+
     except Exception as e:
         db.session.rollback()
+        current_app.logger.error(f"Error submitting attendance: {str(e)}", exc_info=True)
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
             return jsonify({
                 'success': False,
@@ -299,34 +328,41 @@ def records():
     active_count = StudentRecord.query.filter_by(active=True).count()
     inactive_count = StudentRecord.query.filter_by(active=False).count()
     
+    # Prepare location data for each record
+    records_with_location = []
+    for record in all_records:
+        location_data = {
+            'latitude': record.latitude,
+            'longitude': record.longitude,
+            'accuracy': record.accuracy,
+            'location_name': record.location_name
+        }
+        records_with_location.append((record, location_data))
+    
     return render_template('records.html', 
                          records=all_records,
+                         records_with_location=records_with_location,
                          active_count=active_count,
                          inactive_count=inactive_count)
 
-
-# Download PDF route
+# Download CSV route
 @app.route('/download/all/csv')
+@login_required
 def download_all_csv():
     try:
-        # Get all student records with proper ordering (using StudentRecord model)
         all_records = StudentRecord.query.order_by(StudentRecord.timestamp.desc()).all()
         
-        # Create CSV output in memory
         output = io.StringIO()
         writer = csv.writer(output)
         
-        # Write comprehensive header row
         writer.writerow([
             'No.', 'Name', 'Matric Number', 'Course',
             'Date', 'Time', 'Status', 'Record ID'
         ])
         
         if not all_records:
-            # Write a message when no records exist
             writer.writerow(['No attendance records found', '', '', '', '', '', '', ''])
         else:
-            # Write data rows with proper formatting
             for idx, record in enumerate(all_records, 1):
                 writer.writerow([
                     idx,
@@ -341,7 +377,6 @@ def download_all_csv():
         
         output.seek(0)
         
-        # Generate filename with current date
         filename = f"attendance_records_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
         
         return Response(
@@ -354,15 +389,16 @@ def download_all_csv():
         )
     except Exception as e:
         app.logger.error(f"CSV export error: {str(e)}")
-        return "Error generating CSV file", 500
+        flash('Error generating CSV file', 'danger')
+        return redirect(url_for('records'))
 
+# Download PDF route
 @app.route('/download/all/pdf')
+@login_required
 def download_all_pdf():
     try:
-        # Get all student records (using StudentRecord model)
         all_records = StudentRecord.query.order_by(StudentRecord.timestamp.desc()).all()
         
-        # Create PDF buffer
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(
             buffer,
@@ -374,11 +410,9 @@ def download_all_pdf():
             title="Student Attendance Records"
         )
         
-        # Create data for table
         data = [['#', 'Name', 'Matric No.', 'Course', 'Date', 'Time', 'Status', 'Record ID']]
         
         if not all_records:
-            # Add message when no records exist
             data.append(['No attendance records found', '', '', '', '', '', '', ''])
         else:
             for idx, record in enumerate(all_records, 1):
@@ -393,11 +427,9 @@ def download_all_pdf():
                     str(record.id)
                 ])
         
-        # Create table with column widths
         col_widths = ['5%', '20%', '15%', '15%', '15%', '10%', '10%', '10%']
         table = Table(data, colWidths=col_widths, repeatRows=1)
         
-        # Add style
         style = TableStyle([
             ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2c3e50')),
             ('TEXTCOLOR', (0,0), (-1,0), colors.white),
@@ -412,30 +444,23 @@ def download_all_pdf():
         ])
         table.setStyle(style)
         
-        # Build PDF elements
         elements = []
         styles = getSampleStyleSheet()
         
-        # Add title
         title = Paragraph("<b>STUDENT ATTENDANCE RECORDS</b>", styles['Title'])
         elements.append(title)
         
-        # Add generation info
         gen_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         info_text = f"<b>Generated on:</b> {gen_date} | <b>Total Records:</b> {len(all_records)}"
         info_para = Paragraph(info_text, styles['Normal'])
         elements.append(info_para)
         
         elements.append(Spacer(1, 24))
-        
-        # Add table
         elements.append(table)
         
-        # Generate PDF
         doc.build(elements)
         buffer.seek(0)
         
-        # Generate filename
         filename = f"attendance_records_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
         
         return Response(
@@ -448,52 +473,68 @@ def download_all_pdf():
         )
     except Exception as e:
         app.logger.error(f"PDF export error: {str(e)}")
-        return "Error generating PDF file", 500
+        flash('Error generating PDF file', 'danger')
+        return redirect(url_for('records'))
 
 # Delete record route
 @app.route('/delete_record/<int:record_id>', methods=['POST'])
+@login_required
 def delete_record(record_id):
-    record = StudentRecord.query.get_or_404(record_id)
-    db.session.delete(record)
-    db.session.commit()
-    return jsonify({'success': True, 'message': 'Record deleted successfully'})
-        
-
-
-@app.route('/toggle_status/<student_id>', methods=['POST'])
-def toggle_status(student_id):
-    if request.is_json:
-        data = request.get_json()
-        new_status = data.get('new_status') == 'active'
-        
-        # Update the student status in your database
-        student = Student.query.get(student_id)
-        if student:
-            student.active = new_status
-            db.session.commit()
-            
-            # Get updated counts
-            total = Student.query.count()
-            active = Student.query.filter_by(active=True).count()
-            inactive = total - active
-            
-            return jsonify({
-                'success': True,
-                'message': 'Status updated successfully',
-                'new_status': new_status,
-                'new_counts': {
-                    'total': total,
-                    'active': active,
-                    'inactive': inactive
-                }
-            })
+    if current_user.role != 'lecturer':
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
     
-    return jsonify({'success': False, 'message': 'Invalid request'}), 400
+    record = StudentRecord.query.get_or_404(record_id)
+    try:
+        db.session.delete(record)
+        db.session.commit()
+        active_count = StudentRecord.query.filter_by(active=True).count()
+        inactive_count = StudentRecord.query.filter_by(active=False).count()
+        return jsonify({
+            'success': True,
+            'message': 'Record deleted successfully',
+            'new_counts': {
+                'total': active_count + inactive_count,
+                'active': active_count,
+                'inactive': inactive_count
+            }
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
 
+# Toggle Student Status
+@app.route('/toggle_status/<int:student_id>', methods=['POST'])
+@login_required
+def toggle_status(student_id):
+    if current_user.role != 'lecturer':
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    
+    record = StudentRecord.query.get_or_404(student_id)
+    record.active = not record.active
+    db.session.commit()
+    
+    active_count = StudentRecord.query.filter_by(active=True).count()
+    inactive_count = StudentRecord.query.filter_by(active=False).count()
+    
+    return jsonify({
+        'success': True,
+        'new_status': record.active,
+        'new_counts': {
+            'total': active_count + inactive_count,
+            'active': active_count,
+            'inactive': inactive_count
+        }
+    })
 
+@app.errorhandler(404)
+def page_not_found(e):
+    return render_template('404.html'), 404
+
+@app.errorhandler(500)
+def internal_server_error(e):
+    return render_template('500.html'), 500
 
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
-    app.run()
-
+    app.run(host='0.0.0.0', port=5000)
