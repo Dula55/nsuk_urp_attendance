@@ -201,6 +201,7 @@ def logout():
     flash('You have been logged out.', 'success')
     return redirect(url_for('index'))
 
+
 # Attendance Route (Protected)
 @app.route('/attendance', methods=['GET', 'POST'])
 @login_required
@@ -216,7 +217,21 @@ def attendance():
         matric_no = form.matric_no.data
         course = form.course.data
         
-        new_record = Attendance(name=name, matric_no=matric_no, course=course)
+        # Get location data from form or geolocation API
+        latitude = request.form.get('latitude')
+        longitude = request.form.get('longitude')
+        accuracy = request.form.get('accuracy')
+        location_name = request.form.get('location_name')
+        
+        new_record = Attendance(
+            name=name,
+            matric_no=matric_no,
+            course=course,
+            latitude=latitude,
+            longitude=longitude,
+            accuracy=accuracy,
+            location_name=location_name
+        )
         db.session.add(new_record)
         db.session.commit()
         
@@ -231,6 +246,10 @@ def submit_attendance():
         name = request.form.get('name')
         matric_no = request.form.get('matric_no')
         course = request.form.get('course')
+        latitude = request.form.get('latitude')
+        longitude = request.form.get('longitude')
+        accuracy = request.form.get('accuracy', 0)
+        location_name = request.form.get('location_name')
         
         if not all([name, matric_no, course]):
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -256,6 +275,10 @@ def submit_attendance():
             matric_no=matric_no,
             course=course,
             timestamp=datetime.now(),
+            latitude=latitude,
+            longitude=longitude,
+            accuracy=accuracy,
+            location_name=location_name,
             active=True
         )
         
@@ -269,7 +292,11 @@ def submit_attendance():
                 'record': {
                     'name': name,
                     'matric_no': matric_no,
-                    'course': course
+                    'course': course,
+                    'latitude': latitude,
+                    'longitude': longitude,
+                    'accuracy': accuracy,
+                    'location_name': location_name
                 }
             })
         
@@ -299,8 +326,20 @@ def records():
     active_count = StudentRecord.query.filter_by(active=True).count()
     inactive_count = StudentRecord.query.filter_by(active=False).count()
     
+    # Prepare location data for each record
+    records_with_location = []
+    for record in all_records:
+        location_data = {
+            'latitude': record.latitude,
+            'longitude': record.longitude,
+            'accuracy': record.accuracy,
+            'location_name': record.location_name
+        }
+        records_with_location.append((record, location_data))
+    
     return render_template('records.html', 
                          records=all_records,
+                         records_with_location=records_with_location,
                          active_count=active_count,
                          inactive_count=inactive_count)
 
@@ -459,34 +498,29 @@ def delete_record(record_id):
     return jsonify({'success': True, 'message': 'Record deleted successfully'})
         
 
-
-@app.route('/toggle_status/<student_id>', methods=['POST'])
+# Toggle Student Status
+@app.route('/toggle_status/<int:student_id>', methods=['POST'])
+@login_required
 def toggle_status(student_id):
-    if request.is_json:
-        data = request.get_json()
-        new_status = data.get('new_status') == 'active'
-        
-        # Update the student status in your database
-        student = Student.query.get(student_id)
-        if student:
-            student.active = new_status
-            db.session.commit()
-            
-            # Get updated counts
-            total = Student.query.count()
-            active = Student.query.filter_by(active=True).count()
-            inactive = total - active
-            
-            return jsonify({
-                'success': True,
-                'message': 'Status updated successfully',
-                'new_status': new_status,
-                'new_counts': {
-                    'total': total,
-                    'active': active,
-                    'inactive': inactive
-                }
-            })
+    if current_user.role != 'lecturer':
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    
+    record = StudentRecord.query.get_or_404(student_id)
+    record.active = not record.active
+    db.session.commit()
+    
+    active_count = StudentRecord.query.filter_by(active=True).count()
+    inactive_count = StudentRecord.query.filter_by(active=False).count()
+    
+    return jsonify({
+        'success': True,
+        'new_status': record.active,
+        'new_counts': {
+            'total': active_count + inactive_count,
+            'active': active_count,
+            'inactive': inactive_count
+        }
+    })
     
     return jsonify({'success': False, 'message': 'Invalid request'}), 400
 
