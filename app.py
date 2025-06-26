@@ -243,23 +243,43 @@ def attendance():
 @login_required
 def submit_attendance():
     try:
+        # Required fields
         name = request.form.get('name')
         matric_no = request.form.get('matric_no')
         course = request.form.get('course')
-        latitude = request.form.get('latitude')
-        longitude = request.form.get('longitude')
-        accuracy = request.form.get('accuracy', 0)
-        location_name = request.form.get('location_name')
         
         if not all([name, matric_no, course]):
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify({
                     'success': False,
-                    'message': 'All fields are required!'
+                    'message': 'Name, Matric Number and Course are required!'
                 }), 400
-            flash('All fields are required!', 'danger')
+            flash('Name, Matric Number and Course are required!', 'danger')
             return redirect(url_for('attendance'))
-        
+
+        # Location fields - make them optional but validate if provided
+        latitude = request.form.get('latitude')
+        longitude = request.form.get('longitude')
+        accuracy = request.form.get('accuracy', 0, type=float)
+        location_name = request.form.get('location_name', '')
+
+        # Validate coordinates if provided
+        if latitude and longitude:
+            try:
+                latitude = float(latitude)
+                longitude = float(longitude)
+                if not (-90 <= latitude <= 90) or not (-180 <= longitude <= 180):
+                    raise ValueError("Invalid coordinate range")
+            except (ValueError, TypeError):
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return jsonify({
+                        'success': False,
+                        'message': 'Invalid latitude/longitude values'
+                    }), 400
+                flash('Invalid location coordinates', 'danger')
+                return redirect(url_for('attendance'))
+
+        # Check for existing record
         existing = StudentRecord.query.filter_by(matric_no=matric_no).first()
         if existing:
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -269,27 +289,29 @@ def submit_attendance():
                 }), 400
             flash('This matric number already exists!', 'warning')
             return redirect(url_for('attendance'))
-        
+
+        # Create new record
         new_record = StudentRecord(
             name=name,
             matric_no=matric_no,
             course=course,
             timestamp=datetime.now(),
-            latitude=latitude,
-            longitude=longitude,
+            latitude=latitude if latitude else None,
+            longitude=longitude if longitude else None,
             accuracy=accuracy,
             location_name=location_name,
             active=True
         )
-        
+
         db.session.add(new_record)
         db.session.commit()
-        
+
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
             return jsonify({
                 'success': True,
                 'message': 'Attendance submitted successfully!',
                 'record': {
+                    'id': new_record.id,
                     'name': name,
                     'matric_no': matric_no,
                     'course': course,
@@ -299,12 +321,13 @@ def submit_attendance():
                     'location_name': location_name
                 }
             })
-        
+
         flash('Attendance submitted successfully!', 'success')
         return redirect(url_for('attendance'))
-        
+
     except Exception as e:
         db.session.rollback()
+        current_app.logger.error(f"Error submitting attendance: {str(e)}", exc_info=True)
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
             return jsonify({
                 'success': False,
@@ -313,6 +336,7 @@ def submit_attendance():
         
         flash(f'Error submitting attendance: {str(e)}', 'danger')
         return redirect(url_for('attendance'))
+
 
 # Records Route (Protected)
 @app.route('/records')
