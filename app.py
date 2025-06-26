@@ -207,6 +207,7 @@ def logout():
     flash('You have been logged out.', 'success')
     return redirect(url_for('index'))
 
+
 # Attendance Route (Protected)
 @app.route('/attendance', methods=['GET', 'POST'])
 @login_required
@@ -216,6 +217,18 @@ def attendance():
         return redirect(url_for('login'))
     
     form = AttendanceForm()
+    
+    if form.validate_on_submit():
+        name = form.name.data
+        matric_no = form.matric_no.data
+        course = form.course.data
+        
+        new_record = Attendance(name=name, matric_no=matric_no, course=course)
+        db.session.add(new_record)
+        db.session.commit()
+        
+        return render_template('success.html', record=new_record)
+    
     return render_template('attendance.html', form=form)
 
 @app.route('/submit_attendance', methods=['POST'])
@@ -235,30 +248,7 @@ def submit_attendance():
                 }), 400
             flash('Name, Matric Number and Course are required!', 'danger')
             return redirect(url_for('attendance'))
-
-        # Location fields
-        latitude = request.form.get('latitude')
-        longitude = request.form.get('longitude')
-        accuracy = request.form.get('accuracy', 0, type=float)
-        location_name = request.form.get('location_name', '')
-
-        # Validate coordinates if provided
-        if latitude and longitude:
-            try:
-                latitude = float(latitude)
-                longitude = float(longitude)
-                if not (-90 <= latitude <= 90) or not (-180 <= longitude <= 180):
-                    raise ValueError("Invalid coordinate range")
-            except (ValueError, TypeError):
-                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                    return jsonify({
-                        'success': False,
-                        'message': 'Invalid latitude/longitude values'
-                    }), 400
-                flash('Invalid location coordinates', 'danger')
-                return redirect(url_for('attendance'))
-
-        # Check for existing record
+        
         existing = StudentRecord.query.filter_by(matric_no=matric_no).first()
         if existing:
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -315,6 +305,7 @@ def submit_attendance():
         
         flash(f'Error submitting attendance: {str(e)}', 'danger')
         return redirect(url_for('attendance'))
+
 
 # Records Route (Protected)
 @app.route('/records')
@@ -484,55 +475,43 @@ def delete_record(record_id):
         return jsonify({'success': False, 'message': 'Unauthorized'}), 403
     
     record = StudentRecord.query.get_or_404(record_id)
-    try:
-        db.session.delete(record)
-        db.session.commit()
-        active_count = StudentRecord.query.filter_by(active=True).count()
-        inactive_count = StudentRecord.query.filter_by(active=False).count()
-        return jsonify({
-            'success': True,
-            'message': 'Record deleted successfully',
-            'new_counts': {
-                'total': active_count + inactive_count,
-                'active': active_count,
-                'inactive': inactive_count
-            }
-        })
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-# Toggle Student Status
-@app.route('/toggle_status/<int:student_id>', methods=['POST'])
-@login_required
-def toggle_status(student_id):
-    if current_user.role != 'lecturer':
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-    
-    record = StudentRecord.query.get_or_404(student_id)
-    record.active = not record.active
+    db.session.delete(record)
     db.session.commit()
-    
-    active_count = StudentRecord.query.filter_by(active=True).count()
-    inactive_count = StudentRecord.query.filter_by(active=False).count()
-    
-    return jsonify({
-        'success': True,
-        'new_status': record.active,
-        'new_counts': {
-            'total': active_count + inactive_count,
-            'active': active_count,
-            'inactive': inactive_count
-        }
-    })
+    return jsonify({'success': True, 'message': 'Record deleted successfully'})
+        
 
-@app.errorhandler(404)
-def page_not_found(e):
-    return render_template('404.html'), 404
 
-@app.errorhandler(500)
-def internal_server_error(e):
-    return render_template('500.html'), 500
+@app.route('/toggle_status/<student_id>', methods=['POST'])
+def toggle_status(student_id):
+    if request.is_json:
+        data = request.get_json()
+        new_status = data.get('new_status') == 'active'
+        
+        # Update the student status in your database
+        student = Student.query.get(student_id)
+        if student:
+            student.active = new_status
+            db.session.commit()
+            
+            # Get updated counts
+            total = Student.query.count()
+            active = Student.query.filter_by(active=True).count()
+            inactive = total - active
+            
+            return jsonify({
+                'success': True,
+                'message': 'Status updated successfully',
+                'new_status': new_status,
+                'new_counts': {
+                    'total': total,
+                    'active': active,
+                    'inactive': inactive
+                }
+            })
+    
+    return jsonify({'success': False, 'message': 'Invalid request'}), 400
+
+
 
 if __name__ == "__main__":
     with app.app_context():

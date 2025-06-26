@@ -81,16 +81,34 @@
                                 </span>
                             </td>
                             <td>
+<<<<<<< HEAD
                                 {% if location_data.location_name %}
                                     {{ location_data.location_name }}
                                 {% elif location_data.latitude and location_data.longitude %}
                                     {{ "%.6f, %.6f"|format(location_data.latitude, location_data.longitude) }}
+=======
+                                {% if record.location_data %}
+                                    {% if record.location_data.name %}
+                                        {{ record.location_data.name }}
+                                    {% elif record.location_data.coordinates %}
+                                        {{ record.location_data.coordinates }}
+                                    {% else %}
+                                        <span class="text-muted">Location recorded</span>
+                                    {% endif %}
+                                {% elif record.latitude and record.longitude %}
+                                    {{ "%.6f, %.6f"|format(record.latitude, record.longitude) }}
+>>>>>>> cb1c7e9abe07bc1c16a598e34168fba442260cb8
                                 {% else %}
                                     <span class="text-muted">N/A</span>
                                 {% endif %}
                                 
+<<<<<<< HEAD
                                 {% if location_data.latitude and location_data.longitude %}
                                 <a href="https://www.google.com/maps?q={{ location_data.latitude }},{{ location_data.longitude }}" 
+=======
+                                {% if record.latitude and record.longitude %}
+                                <a href="https://www.google.com/maps?q={{ record.latitude }},{{ record.longitude }}" 
+>>>>>>> cb1c7e9abe07bc1c16a598e34168fba442260cb8
                                    target="_blank" 
                                    class="btn btn-sm btn-link p-0 ml-1"
                                    data-toggle="tooltip" 
@@ -400,6 +418,9 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     .toast {
         opacity: 1 !important;
+    }
+    .location-data {
+        font-family: monospace;
     }
 </style>
 {% endblock %}
